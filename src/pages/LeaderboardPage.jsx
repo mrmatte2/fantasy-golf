@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTournament } from '../hooks/useTournament';
-import { getAllProfiles, getAllRosters, getAllScores } from '../lib/supabase';
+import { getAllRosters, getAllScores, getTournamentMembers } from '../lib/supabase';
 import { Trophy, Medal, Star } from 'lucide-react';
 
 function formatVsPar(vp) {
@@ -24,34 +25,35 @@ function positionIcon(pos) {
 }
 
 export default function LeaderboardPage() {
+  const { id: tournamentId } = useParams();
   const { user } = useAuth();
-  const { tournamentState } = useTournament();
+  const { tournament } = useTournament(tournamentId);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
 
-  const currentRound = tournamentState?.current_round || 0;
+  const currentRound = tournament?.current_round || 0;
 
-  useEffect(() => { loadLeaderboard(); }, [currentRound]);
+  useEffect(() => {
+    if (tournamentId) loadLeaderboard();
+  }, [tournamentId, currentRound]);
 
   async function loadLeaderboard() {
     setLoading(true);
-
-    const [{ data: profiles }, { data: rosters }, { data: scores }] = await Promise.all([
-      getAllProfiles(),
-      getAllRosters(),
-      getAllScores(),
+    const [{ data: members }, { data: rosters }, { data: scores }] = await Promise.all([
+      getTournamentMembers(tournamentId),
+      getAllRosters(tournamentId),
+      getAllScores(tournamentId),
     ]);
 
-    if (!profiles) { setLoading(false); return; }
+    if (!members) { setLoading(false); return; }
 
-    // Build leaderboard manually from rosters + scores
-    const board = profiles.map(profile => {
+    // Build leaderboard per member
+    const board = members.map(member => {
       const userRosters = (rosters || []).filter(r =>
-        r.user_id === profile.id && r.slot_type === 'starter' && r.is_active
+        r.user_id === member.user_id && r.slot_type === 'starter' && r.is_active
       );
 
-      // Per round, get best 4 of 5
       let totalVsPar = 0;
       const roundBreakdown = [];
 
@@ -64,7 +66,6 @@ export default function LeaderboardPage() {
           return { playerName: r.players?.name, roundTotal, holesPlayed: playerRoundScores.length };
         });
 
-        // Best 4
         const scored = starterScores.filter(s => s.holesPlayed > 0)
           .sort((a, b) => a.roundTotal - b.roundTotal);
         const best4 = scored.slice(0, 4);
@@ -74,16 +75,15 @@ export default function LeaderboardPage() {
       }
 
       return {
-        profileId: profile.id,
-        username: profile.username,
-        teamName: profile.team_name,
+        userId: member.user_id,
+        username: member.profiles?.username,
+        teamName: member.team_name,
         totalVsPar: currentRound > 0 ? totalVsPar : null,
         roundBreakdown,
         starters: userRosters,
       };
     });
 
-    // Sort
     board.sort((a, b) => {
       if (a.totalVsPar === null && b.totalVsPar === null) return 0;
       if (a.totalVsPar === null) return 1;
@@ -100,25 +100,24 @@ export default function LeaderboardPage() {
       <div className="mb-8 animate-fade-up">
         <h1 className="font-display text-3xl font-bold text-masters-cream">Leaderboard</h1>
         <p className="text-white/40 text-sm mt-1">
+          {tournament?.name}
           {currentRound === 0
-            ? 'Tournament hasn\'t started yet'
-            : `Round ${currentRound} · Best 4 of 5 starters count`}
+            ? ' · Tournament hasn\'t started yet'
+            : ` · Round ${currentRound} · Best 4 of 5 starters count`}
         </p>
       </div>
 
-      {/* Tournament rounds header */}
       {currentRound > 0 && (
         <div className="card-dark mb-6 animate-fade-up-delay-1">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <span className="text-sm text-white/50">The Masters 2025</span>
+            <span className="text-sm text-white/50">{tournament?.name}</span>
             <div className="flex gap-2">
               {[1,2,3,4].map(r => (
-                <div key={r}
-                  className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    r < currentRound ? 'bg-masters-gold/20 text-masters-gold' :
-                    r === currentRound ? 'bg-masters-green/60 text-green-300 border border-green-600/30' :
-                    'bg-white/5 text-white/20'
-                  }`}>
+                <div key={r} className={`px-3 py-1 rounded-full text-xs font-medium ${
+                  r < currentRound ? 'bg-masters-gold/20 text-masters-gold'
+                  : r === currentRound ? 'bg-masters-green/60 text-green-300 border border-green-600/30'
+                  : 'bg-white/5 text-white/20'
+                }`}>
                   R{r} {r === currentRound ? '▶' : r < currentRound ? '✓' : ''}
                 </div>
               ))}
@@ -127,47 +126,39 @@ export default function LeaderboardPage() {
         </div>
       )}
 
-      {/* Board */}
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => <div key={i} className="skeleton h-20 rounded-xl" />)}
         </div>
+      ) : entries.length === 0 ? (
+        <div className="card-dark text-center py-12 text-white/30">
+          No teams have been drafted yet.
+        </div>
       ) : (
         <div className="space-y-3 animate-fade-up-delay-2">
           {entries.map((entry, idx) => {
-            const isMe = entry.profileId === user?.id;
+            const isMe = entry.userId === user?.id;
             const position = idx + 1;
-            const isExpanded = expanded === entry.profileId;
+            const isExpanded = expanded === entry.userId;
 
             return (
-              <div key={entry.profileId}
-                className={`rounded-xl border transition-all ${
-                  isMe
-                    ? 'border-masters-gold/40 bg-masters-gold/5'
-                    : 'border-white/10 bg-white/3 hover:border-white/15'
-                }`}>
-                <div
-                  className="flex items-center justify-between p-4 cursor-pointer"
-                  onClick={() => setExpanded(isExpanded ? null : entry.profileId)}>
-
+              <div key={entry.userId} className={`rounded-xl border transition-all ${
+                isMe ? 'border-masters-gold/40 bg-masters-gold/5' : 'border-white/10 bg-white/3 hover:border-white/15'
+              }`}>
+                <div className="flex items-center justify-between p-4 cursor-pointer"
+                  onClick={() => setExpanded(isExpanded ? null : entry.userId)}>
                   <div className="flex items-center gap-4">
-                    <div className="flex items-center justify-center w-6">
-                      {positionIcon(position)}
-                    </div>
+                    <div className="flex items-center justify-center w-6">{positionIcon(position)}</div>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-display font-semibold text-masters-cream">
                           {entry.teamName || entry.username}
                         </span>
                         {isMe && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-masters-gold/20 text-masters-gold border border-masters-gold/30">
-                            You
-                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-masters-gold/20 text-masters-gold border border-masters-gold/30">You</span>
                         )}
                       </div>
-                      <div className="text-xs text-white/40 mt-0.5">
-                        {entry.starters.length} starters selected
-                      </div>
+                      <div className="text-xs text-white/40 mt-0.5">{entry.starters.length} starters selected</div>
                     </div>
                   </div>
 
@@ -189,7 +180,6 @@ export default function LeaderboardPage() {
                   </div>
                 </div>
 
-                {/* Expanded: show starters + per-round breakdown */}
                 {isExpanded && (
                   <div className="px-4 pb-4 border-t border-white/5">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
@@ -199,9 +189,7 @@ export default function LeaderboardPage() {
                           {entry.starters.map(r => (
                             <div key={r.id} className="flex items-center justify-between text-sm">
                               <span className="text-masters-cream">{r.players?.name}</span>
-                              <span className="text-white/30 text-xs">
-                                #{r.players?.world_ranking}
-                              </span>
+                              <span className="text-white/30 text-xs">#{r.players?.world_ranking}</span>
                             </div>
                           ))}
                         </div>
@@ -239,12 +227,6 @@ export default function LeaderboardPage() {
               </div>
             );
           })}
-
-          {entries.length === 0 && (
-            <div className="card-dark text-center py-12 text-white/30">
-              No teams have been drafted yet.
-            </div>
-          )}
         </div>
       )}
     </div>

@@ -1,29 +1,41 @@
 import { useState, useEffect } from 'react';
-import { getTournamentState, supabase } from '../lib/supabase';
+import { getTournament, supabase } from '../lib/supabase';
 
-export function useTournament() {
-  const [state, setState] = useState(null);
+// Pass a tournamentId to subscribe to a specific tournament's state.
+// Used by Draft, MyTeam, Leaderboard pages inside /tournament/:id/*
+export function useTournament(tournamentId) {
+  const [tournament, setTournament] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchState();
+    if (!tournamentId) {
+      setTournament(null);
+      setLoading(false);
+      return;
+    }
 
-    // Real-time subscription to tournament state changes
+    fetchTournament();
+
+    // Real-time updates when admin changes round/lock/draft state
     const channel = supabase
-      .channel('tournament_state')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tournament_state' },
-        (payload) => setState(payload.new))
+      .channel(`tournament_${tournamentId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'tournaments',
+        filter: `id=eq.${tournamentId}`,
+      }, (payload) => setTournament(payload.new))
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, []);
+  }, [tournamentId]);
 
-  async function fetchState() {
+  async function fetchTournament() {
     setLoading(true);
-    const { data } = await getTournamentState();
-    setState(data);
+    const { data } = await getTournament(tournamentId);
+    setTournament(data);
     setLoading(false);
   }
 
-  return { tournamentState: state, tournamentLoading: loading, refreshTournament: fetchState };
+  return { tournament, tournamentLoading: loading, refreshTournament: fetchTournament };
 }
