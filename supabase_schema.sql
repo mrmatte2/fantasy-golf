@@ -171,7 +171,8 @@ create policy "profiles_update_own" on public.profiles for update using (auth.ui
 -- Tournaments: everyone reads, admin writes
 create policy "tournaments_select" on public.tournaments for select using (true);
 create policy "tournaments_admin_write" on public.tournaments for all
-  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
 
 -- Memberships: everyone reads, users manage their own
 create policy "memberships_select" on public.tournament_memberships for select using (true);
@@ -183,7 +184,8 @@ create policy "memberships_delete_own" on public.tournament_memberships for dele
 -- Players: everyone reads, admin writes
 create policy "players_select" on public.players for select using (true);
 create policy "players_admin_write" on public.players for all
-  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
 
 -- Rosters: read all, write own (if tournament draft open and not locked)
 create policy "rosters_select" on public.rosters for select using (true);
@@ -209,7 +211,8 @@ create policy "rosters_delete_own" on public.rosters for delete
 -- Scores: everyone reads, admin writes
 create policy "scores_select" on public.scores for select using (true);
 create policy "scores_admin_write" on public.scores for all
-  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
 
 -- Hole pars: everyone reads
 create policy "hole_pars_select" on public.hole_pars for select using (true);

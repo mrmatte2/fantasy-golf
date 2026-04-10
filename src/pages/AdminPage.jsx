@@ -16,6 +16,7 @@ function TournamentsTab({ currentUserId }) {
   const [modal, setModal] = useState(null); // null | 'create' | tournament object (edit)
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   useEffect(() => { load(); }, []);
@@ -27,21 +28,27 @@ function TournamentsTab({ currentUserId }) {
 
   function openCreate() {
     setForm({ name: '', course: '', year: new Date().getFullYear(), budget: 100, current_round: 0, draft_open: true, is_locked: false });
+    setSaveError('');
     setModal('create');
   }
 
   function openEdit(t) {
     setForm({ name: t.name, course: t.course || '', year: t.year || '', budget: t.budget, current_round: t.current_round, draft_open: t.draft_open, is_locked: t.is_locked });
+    setSaveError('');
     setModal(t);
   }
 
   async function handleSave() {
     if (!form.name.trim()) return;
     setSaving(true);
-    if (modal === 'create') {
-      await createTournament({ ...form, created_by: currentUserId });
-    } else {
-      await updateTournament(modal.id, form);
+    setSaveError('');
+    const { error } = modal === 'create'
+      ? await createTournament({ ...form, created_by: currentUserId })
+      : await updateTournament(modal.id, form);
+    if (error) {
+      setSaveError(error.message);
+      setSaving(false);
+      return;
     }
     setModal(null);
     await load();
@@ -191,12 +198,15 @@ function TournamentsTab({ currentUserId }) {
                 </label>
               </div>
             </div>
-            <div className="flex gap-3 mt-6">
+            {saveError && (
+              <p className="text-red-400 text-xs mt-4 p-3 rounded-lg bg-red-900/20 border border-red-800/30 break-words">{saveError}</p>
+            )}
+            <div className="flex gap-3 mt-4">
               <button onClick={handleSave} disabled={saving || !form.name.trim()} className="btn-primary flex-1 flex items-center justify-center gap-2">
                 {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
                 {saving ? 'Saving…' : 'Save'}
               </button>
-              <button onClick={() => setModal(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={() => { setModal(null); setSaveError(''); }} className="btn-secondary flex-1">Cancel</button>
             </div>
           </div>
         </div>
