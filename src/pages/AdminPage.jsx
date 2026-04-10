@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useTournament } from '../../hooks/useTournament';
+import { useTournament } from '../hooks/useTournament';
 import {
   updateTournamentState, getPlayers, updatePlayer, getAllProfiles, updateProfile,
   upsertScore, getHolePars, getAllScores, getAllRosters
-} from '../../lib/supabase';
+} from '../lib/supabase';
 import { Settings, Lock, Unlock, Users, Trophy, Edit3, Save, X, RefreshCw, ChevronDown } from 'lucide-react';
 
 const TABS = ['Tournament', 'Scores', 'Players', 'Users'];

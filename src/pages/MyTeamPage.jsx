@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../../hooks/useAuth';
-import { useTournament } from '../../hooks/useTournament';
+import { useAuth } from '../hooks/useAuth';
+import { useTournament } from '../hooks/useTournament';
 import {
   getUserRoster, getPlayerScores, getHolePars, updateRosterEntry, addToRoster, removeFromRoster, getPlayers
-} from '../../lib/supabase';
+} from '../lib/supabase';
 import { ArrowLeftRight, ChevronDown, ChevronRight, Lock, Star } from 'lucide-react';
 
 function vsParClass(vp) {

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../../hooks/useAuth';
-import { useTournament } from '../../hooks/useTournament';
+import { useAuth } from '../hooks/useAuth';
+import { useTournament } from '../hooks/useTournament';
 import {
   getPlayers, getUserRoster, addToRoster, removeFromRoster, updateProfile, getProfile
-} from '../../lib/supabase';
+} from '../lib/supabase';
 import { Search, CheckCircle, Lock, ChevronDown, ChevronUp, Info } from 'lucide-react';
 
 const STARTING_BUDGET = 100;

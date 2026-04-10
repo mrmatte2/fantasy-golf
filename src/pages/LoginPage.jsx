@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signIn, signUp } from '../../lib/supabase';
+import { signIn, signUp } from '../lib/supabase';
 
 export default function LoginPage() {
   const navigate = useNavigate();

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../hooks/useAuth';
-import { useTournament } from '../../hooks/useTournament';
-import { getAllProfiles, getAllRosters, getAllScores } from '../../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
+import { useTournament } from '../hooks/useTournament';
+import { getAllProfiles, getAllRosters, getAllScores } from '../lib/supabase';
 import { Trophy, Medal, Star } from 'lucide-react';
 
 function formatVsPar(vp) {
