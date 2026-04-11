@@ -45,11 +45,31 @@ async function main() {
 
   // 4. Build upsert rows
   const upserts = [];
-  const unmatched = [];
+  const created = [];
 
   for (const mp of masterPlayers) {
-    const playerId = byMastersId[mp.id] || byName[mp.full_name?.toLowerCase().trim()];
-    if (!playerId) { unmatched.push(mp.full_name); continue; }
+    let playerId = byMastersId[mp.id] || byName[mp.full_name?.toLowerCase().trim()];
+
+    // Auto-create player if not in DB
+    if (!playerId) {
+      const { data: newPlayer, error: createError } = await supabase
+        .from('players')
+        .insert({
+          name: mp.full_name,
+          country: mp.countryName || null,
+          masters_id: String(mp.id),
+          is_active: true,
+          made_cut: mp.active === true || (mp.status !== 'C' && mp.status !== 'WD'),
+          is_withdrawn: mp.status === 'WD',
+        })
+        .select('id')
+        .single();
+
+      if (createError) { console.warn(`Could not create player ${mp.full_name}: ${createError.message}`); continue; }
+      playerId = newPlayer.id;
+      byName[mp.full_name.toLowerCase().trim()] = playerId; // cache for deduplication
+      created.push(mp.full_name);
+    }
 
     for (let round = 1; round <= 4; round++) {
       const roundData = mp[`round${round}`];
@@ -63,7 +83,7 @@ async function main() {
     }
   }
 
-  if (unmatched.length) console.warn('⚠ Unmatched players:', unmatched.join(', '));
+  if (created.length) console.log(`Created ${created.length} new players: ${created.join(', ')}`);
 
   // 5. Upsert into scores table
   if (upserts.length) {
