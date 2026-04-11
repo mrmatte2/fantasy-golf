@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import Navbar from './components/shared/Navbar';
 import LoginPage from './pages/LoginPage';
@@ -36,7 +36,7 @@ function AppLayout({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <HashRouter>
         <Routes>
           {/* Public */}
           <Route path="/login" element={<LoginPage />} />
@@ -77,7 +77,7 @@ export default function App() {
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/tournaments" replace />} />
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </AuthProvider>
   );
 }
