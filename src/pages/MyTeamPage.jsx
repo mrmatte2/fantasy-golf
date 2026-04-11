@@ -73,25 +73,39 @@ function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubCl
   const roundScores = (scores || []).filter(s => s.round === currentRound);
   const roundTotal = roundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
   const holesPlayed = roundScores.length;
+  const missedCut = !player?.made_cut && !player?.is_withdrawn;
+  const needsSub = !isSub && missedCut && !isLocked;
 
   return (
     <div className={`rounded-xl border transition-all ${
-      isSub ? 'border-white/8 bg-white/2'
+      missedCut && !isSub ? 'border-red-700/50 bg-red-900/10'
+      : isSub && missedCut ? 'border-red-800/30 bg-red-900/5 opacity-60'
+      : isSub ? 'border-white/8 bg-white/2'
       : isTopFour ? 'border-masters-gold/30 bg-masters-gold/5'
       : 'border-white/10 bg-white/3'
     }`}>
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-3">
-          {!isSub && <Star size={12} className={isTopFour ? 'text-masters-gold fill-masters-gold' : 'text-white/20'} />}
+          {!isSub && (
+            missedCut
+              ? <ArrowLeftRight size={14} className="text-red-400 shrink-0" />
+              : <Star size={12} className={isTopFour ? 'text-masters-gold fill-masters-gold' : 'text-white/20'} />
+          )}
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-display font-semibold text-masters-cream text-sm">{player?.name}</span>
+              <span className={`font-display font-semibold text-sm ${missedCut ? 'text-red-300/80 line-through' : 'text-masters-cream'}`}>
+                {player?.name}
+              </span>
               {player?.is_withdrawn && <span className="badge-wd">WD</span>}
-              {!player?.made_cut && !player?.is_withdrawn && currentRound > 2 && <span className="badge-cut">CUT</span>}
-              {isSub && <span className="badge-sub">Sub</span>}
-              {!isSub && isTopFour && <span className="text-xs text-masters-gold/60">Counting</span>}
+              {missedCut && <span className="badge-cut">MISSED CUT</span>}
+              {isSub && !missedCut && <span className="badge-sub">Sub</span>}
+              {isSub && missedCut && <span className="text-xs text-red-400/60">Sub · Cut</span>}
+              {!isSub && !missedCut && isTopFour && <span className="text-xs text-masters-gold/60">Counting</span>}
             </div>
             <div className="text-xs text-white/40 mt-0.5">#{player?.world_ranking} WR · {player?.odds_fractional}</div>
+            {needsSub && (
+              <div className="text-xs text-red-400 mt-1 font-medium">⚠ Substitute needed for Round {currentRound + 1}</div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -103,7 +117,11 @@ function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubCl
           )}
           {!isLocked && (
             <button onClick={() => onSubClick(rosterEntry)}
-              className="p-1.5 rounded-lg text-white/30 hover:text-masters-gold hover:bg-masters-gold/10 transition-colors">
+              className={`p-1.5 rounded-lg transition-colors ${
+                needsSub
+                  ? 'text-red-400 bg-red-900/30 hover:bg-red-900/50'
+                  : 'text-white/30 hover:text-masters-gold hover:bg-masters-gold/10'
+              }`}>
               <ArrowLeftRight size={14} />
             </button>
           )}
@@ -277,6 +295,26 @@ export default function MyTeamPage() {
         </div>
       )}
 
+      {(() => {
+        const cutStarters = starters.filter(r => !r.players?.made_cut && !r.players?.is_withdrawn);
+        const cutSubs = subsRoster.filter(r => !r.players?.made_cut && !r.players?.is_withdrawn);
+        if (cutStarters.length === 0) return null;
+        return (
+          <div className="mb-5 px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 text-sm">
+            <div className="flex items-center gap-2 text-red-300 font-medium mb-1">
+              <ArrowLeftRight size={15} />
+              {cutStarters.length} starter{cutStarters.length > 1 ? 's' : ''} missed the cut
+            </div>
+            <p className="text-red-300/60 text-xs">
+              {isLocked
+                ? 'Substitutions will open between rounds.'
+                : `Swap them out before Round ${currentRound + 1}. ${cutSubs.length > 0 ? `Note: ${cutSubs.length} of your subs also missed the cut.` : 'Check your subs below — pick one who survived.'}`
+              }
+            </p>
+          </div>
+        );
+      })()}
+
       <div className="mb-6 animate-fade-up-delay-1">
         <h2 className="font-display font-semibold text-masters-cream mb-3 flex items-center gap-2">
           Starters <span className="text-xs font-body text-white/40">(best 4 count)</span>
@@ -319,13 +357,36 @@ export default function MyTeamPage() {
             <p className="text-white/40 text-sm mb-4">Choose a substitute to swap in:</p>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {subs.length === 0 && <p className="text-white/30 text-sm text-center py-4">No substitutes available</p>}
-              {subs.map(sub => (
-                <button key={sub.id} onClick={() => handleSub(subModal.outEntry, sub)}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-white/10 hover:border-masters-gold/40 hover:bg-masters-gold/5 transition-colors">
-                  <div className="font-medium text-masters-cream text-sm">{sub.players?.name}</div>
-                  <div className="text-xs text-white/40">#{sub.players?.world_ranking} WR · £{sub.players?.price_override ?? sub.players?.price}</div>
-                </button>
-              ))}
+              {subs
+                .sort((a, b) => {
+                  // survivors first
+                  const aOk = a.players?.made_cut && !a.players?.is_withdrawn;
+                  const bOk = b.players?.made_cut && !b.players?.is_withdrawn;
+                  return bOk - aOk;
+                })
+                .map(sub => {
+                  const survived = sub.players?.made_cut && !sub.players?.is_withdrawn;
+                  return (
+                    <button key={sub.id} onClick={() => survived && handleSub(subModal.outEntry, sub)}
+                      disabled={!survived}
+                      className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+                        survived
+                          ? 'border-white/10 hover:border-masters-gold/40 hover:bg-masters-gold/5'
+                          : 'border-red-900/30 bg-red-900/10 opacity-50 cursor-not-allowed'
+                      }`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`font-medium text-sm ${survived ? 'text-masters-cream' : 'text-red-300/70 line-through'}`}>
+                          {sub.players?.name}
+                        </span>
+                        {!survived && <span className="badge-cut text-xs">CUT</span>}
+                      </div>
+                      <div className="text-xs text-white/40 mt-0.5">
+                        #{sub.players?.world_ranking} WR · £{sub.players?.price_override ?? sub.players?.price}
+                        {survived && <span className="ml-2 text-green-400">✓ Made cut</span>}
+                      </div>
+                    </button>
+                  );
+                })}
             </div>
             <button onClick={() => setSubModal(null)} className="btn-secondary w-full mt-4">Cancel</button>
           </div>
