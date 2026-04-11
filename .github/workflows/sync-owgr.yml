@@ -1,12 +1,10 @@
-name: Sync Masters Scores
+name: Sync OWGR Rankings
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'   # every 15 minutes
-  workflow_dispatch:           # allow manual trigger from GitHub Actions UI
+  workflow_dispatch:   # manual only — run before each new tournament
 
 jobs:
-  sync-scores:
+  sync-owgr:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,9 +13,8 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm install --prefix .
-      - name: Sync scores
-        run: node scripts/sync-masters-scores.js
+      - name: Sync OWGR rankings
+        run: node scripts/sync-owgr-rankings.js
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          TOURNAMENT_ID:        ${{ secrets.MASTERS_TOURNAMENT_ID }}

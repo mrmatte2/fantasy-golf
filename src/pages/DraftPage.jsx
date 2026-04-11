@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTournament } from '../hooks/useTournament';
 import {
-  getPlayers, getUserRoster, addToRoster, removeFromRoster,
+  getTournamentPlayers, getTournamentPriceMap,
+  getUserRoster, addToRoster, removeFromRoster,
   getUserMembership, joinTournament,
 } from '../lib/supabase';
 import { Search, Lock, Info, LogIn } from 'lucide-react';
@@ -90,15 +91,17 @@ export default function DraftPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [{ data: pls }, { data: rst }, { data: mem }] = await Promise.all([
-      getPlayers(),
+    const [{ data: pls }, { data: rst }, { data: mem }, priceMap] = await Promise.all([
+      getTournamentPlayers(tournamentId),
       getUserRoster(user.id, tournamentId),
       getUserMembership(tournamentId, user.id),
+      getTournamentPriceMap(tournamentId),
     ]);
     setPlayers(pls || []);
     setRoster(rst || []);
     setMembership(mem ?? null);
-    const spent = (rst || []).reduce((sum, r) => sum + (r.players?.price_override ?? r.players?.price ?? 0), 0);
+    // Use tournament-specific prices for budget calculation
+    const spent = (rst || []).reduce((sum, r) => sum + (priceMap[r.player_id] ?? r.players?.price ?? 0), 0);
     setCurrentBudget(budget - spent);
     setLoading(false);
   }, [user.id, tournamentId, budget]);
@@ -116,7 +119,7 @@ export default function DraftPage() {
   }
 
   async function handleAdd(player, slotType) {
-    const price = player.price_override ?? player.price;
+    const price = player.price;
     if (price > currentBudget) { alert('Not enough budget!'); return; }
     if (slotType === 'starter' && starters.length >= MAX_STARTERS) {
       if (subs.length >= MAX_SUBS) { alert('Roster is full (5 starters + 3 subs)'); return; }
@@ -244,7 +247,7 @@ export default function DraftPage() {
                     <span className="w-5 h-5 rounded-full bg-masters-gold/20 text-masters-gold text-xs flex items-center justify-center font-mono">{i + 1}</span>
                     <span className="text-sm text-masters-cream">{r.players?.name}</span>
                   </div>
-                  <PriceTag price={r.players?.price_override ?? r.players?.price} />
+                  <PriceTag price={r.players?.price} />
                 </div>
               ))}
               {Array.from({ length: MAX_STARTERS - starters.length }).map((_, i) => (
@@ -267,7 +270,7 @@ export default function DraftPage() {
                     <span className="w-5 h-5 rounded-full bg-white/10 text-white/50 text-xs flex items-center justify-center font-mono">S{i + 1}</span>
                     <span className="text-sm text-masters-cream">{r.players?.name}</span>
                   </div>
-                  <PriceTag price={r.players?.price_override ?? r.players?.price} />
+                  <PriceTag price={r.players?.price} />
                 </div>
               ))}
               {Array.from({ length: MAX_SUBS - subs.length }).map((_, i) => (
@@ -322,7 +325,7 @@ export default function DraftPage() {
                 onRemove={handleRemove}
                 canAdd={
                   (starters.length < MAX_STARTERS || subs.length < MAX_SUBS) &&
-                  (player.price_override ?? player.price) <= currentBudget
+                  (player.price ?? 0) <= currentBudget
                 }
                 isLocked={isLocked}
               />

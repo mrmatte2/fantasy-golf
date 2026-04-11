@@ -72,23 +72,35 @@ create table public.tournament_memberships (
 );
 
 -- ============================================================
--- PLAYERS (global master list — admin updates before each event)
+-- PLAYERS (global master list — identity sourced from OWGR)
 -- ============================================================
 create table public.players (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   country text,
-  world_ranking integer,
-  odds_fractional text,
-  odds_decimal numeric(6,2),
+  world_ranking integer,       -- refreshed from OWGR before each event
+  owgr_id text,                -- OWGR player ID (universal across all tournaments)
+  masters_id text,             -- Masters-specific ID for score sync (optional override)
   form_score numeric(4,2),
-  price numeric(5,2),
-  price_override numeric(5,2),
   is_active boolean default true,
   is_withdrawn boolean default false,
   made_cut boolean default true,
   photo_url text,
   created_at timestamptz default now()
+);
+
+-- ============================================================
+-- TOURNAMENT PLAYERS (per-tournament field + pricing)
+-- ============================================================
+create table public.tournament_players (
+  id uuid primary key default uuid_generate_v4(),
+  tournament_id uuid references public.tournaments(id) on delete cascade,
+  player_id uuid references public.players(id) on delete cascade,
+  price numeric(5,2),
+  odds_fractional text,
+  world_ranking integer,       -- snapshot at time of tournament
+  is_in_field boolean default true,
+  unique(tournament_id, player_id)
 );
 
 -- ============================================================
@@ -162,6 +174,7 @@ alter table public.tournament_memberships enable row level security;
 alter table public.players enable row level security;
 alter table public.rosters enable row level security;
 alter table public.scores enable row level security;
+alter table public.tournament_players enable row level security;
 alter table public.hole_pars enable row level security;
 
 -- Profiles: everyone reads, own row update
@@ -180,6 +193,12 @@ create policy "memberships_insert_own" on public.tournament_memberships for inse
   with check (auth.uid() = user_id);
 create policy "memberships_delete_own" on public.tournament_memberships for delete
   using (auth.uid() = user_id);
+
+-- Tournament players: everyone reads, admin writes
+create policy "tournament_players_select" on public.tournament_players for select using (true);
+create policy "tournament_players_admin_write" on public.tournament_players for all
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
 
 -- Players: everyone reads, admin writes
 create policy "players_select" on public.players for select using (true);

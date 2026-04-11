@@ -105,6 +105,51 @@ export async function getTournamentMembers(tournamentId) {
     .eq('tournament_id', tournamentId);
 }
 
+// ─── Tournament Players (per-tournament field + pricing) ──────────────────────
+
+export async function getTournamentPlayers(tournamentId) {
+  const { data, error } = await supabase
+    .from('tournament_players')
+    .select('price, odds_fractional, world_ranking, is_in_field, players(*)')
+    .eq('tournament_id', tournamentId)
+    .eq('is_in_field', true)
+    .order('world_ranking');
+  // Flatten: merge tournament-specific price/odds onto the player object
+  const flattened = (data || []).map(tp => ({
+    ...tp.players,
+    price: tp.price ?? tp.players?.price,
+    odds_fractional: tp.odds_fractional ?? tp.players?.odds_fractional,
+    world_ranking: tp.world_ranking ?? tp.players?.world_ranking,
+  }));
+  return { data: flattened, error };
+}
+
+export async function getTournamentField(tournamentId) {
+  // Returns raw tournament_players rows (for admin field setup)
+  return await supabase
+    .from('tournament_players')
+    .select('*, players(id, name, country, world_ranking, owgr_id)')
+    .eq('tournament_id', tournamentId)
+    .order('world_ranking');
+}
+
+export async function upsertTournamentPlayers(tournamentId, entries) {
+  // entries: [{ player_id, price, odds_fractional, world_ranking, is_in_field }]
+  const rows = entries.map(e => ({ ...e, tournament_id: tournamentId }));
+  return await supabase
+    .from('tournament_players')
+    .upsert(rows, { onConflict: 'tournament_id,player_id' })
+    .select();
+}
+
+export async function getTournamentPriceMap(tournamentId) {
+  const { data } = await supabase
+    .from('tournament_players')
+    .select('player_id, price')
+    .eq('tournament_id', tournamentId);
+  return Object.fromEntries((data || []).map(tp => [tp.player_id, tp.price ?? 0]));
+}
+
 // ─── Players (global master list) ─────────────────────────────────────────────
 
 export async function getPlayers() {

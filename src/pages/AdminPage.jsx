@@ -5,10 +5,11 @@ import {
   getAllPlayers, updatePlayer, createPlayer, deletePlayer, markAllPlayersMissedCut,
   getAllProfiles, updateProfile,
   getPlayers, getAllScores, upsertScore, getHolePars,
+  getTournamentField, upsertTournamentPlayers, calculatePrice,
 } from '../lib/supabase';
-import { Settings, Lock, Unlock, Edit3, Save, X, RefreshCw, Plus, Trash2, Trophy, Users, BarChart3 } from 'lucide-react';
+import { Settings, Lock, Unlock, Edit3, Save, X, RefreshCw, Plus, Trash2, Trophy, List } from 'lucide-react';
 
-const TABS = ['Tournaments', 'Scores', 'Players', 'Users'];
+const TABS = ['Tournaments', 'Field Setup', 'Scores', 'Players', 'Users'];
 
 // ─── Tournaments Tab ──────────────────────────────────────────────────────────
 function TournamentsTab({ currentUserId }) {
@@ -643,6 +644,184 @@ function PlayersTab() {
   );
 }
 
+// ─── Field Setup Tab ─────────────────────────────────────────────────────────
+function FieldSetupTab() {
+  const [tournaments, setTournaments] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [allPlayers, setAllPlayers] = useState([]);
+  const [fieldMap, setFieldMap] = useState({}); // player_id → { price, odds_fractional, world_ranking, is_in_field }
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    getTournaments().then(({ data }) => setTournaments(data || []));
+    getAllPlayers().then(({ data }) => setAllPlayers(data || []));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    getTournamentField(selectedId).then(({ data }) => {
+      const map = {};
+      (data || []).forEach(tp => {
+        map[tp.player_id] = {
+          price: tp.price ?? '',
+          odds_fractional: tp.odds_fractional ?? '',
+          world_ranking: tp.world_ranking ?? tp.players?.world_ranking ?? '',
+          is_in_field: tp.is_in_field,
+        };
+      });
+      setFieldMap(map);
+    });
+  }, [selectedId]);
+
+  function toggleField(player) {
+    setFieldMap(m => {
+      const cur = m[player.id];
+      if (cur) {
+        return { ...m, [player.id]: { ...cur, is_in_field: !cur.is_in_field } };
+      }
+      return {
+        ...m,
+        [player.id]: {
+          price: '',
+          odds_fractional: '',
+          world_ranking: player.world_ranking ?? '',
+          is_in_field: true,
+        },
+      };
+    });
+  }
+
+  function updateField(playerId, key, value) {
+    setFieldMap(m => ({ ...m, [playerId]: { ...m[playerId], [key]: value } }));
+  }
+
+  function autoPrice(player) {
+    if (!player.world_ranking) return;
+    const price = Math.round(Math.max(4, 20 - (player.world_ranking - 1) * 0.12) * 2) / 2;
+    updateField(player.id, 'price', price);
+  }
+
+  function autoPriceAll() {
+    setFieldMap(m => {
+      const next = { ...m };
+      Object.keys(next).forEach(pid => {
+        if (!next[pid].is_in_field) return;
+        const player = allPlayers.find(p => p.id === pid);
+        if (player?.world_ranking) {
+          next[pid] = { ...next[pid], price: Math.round(Math.max(4, 20 - (player.world_ranking - 1) * 0.12) * 2) / 2 };
+        }
+      });
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    if (!selectedId) return;
+    setSaving(true);
+    const entries = Object.entries(fieldMap)
+      .filter(([, v]) => v.is_in_field)
+      .map(([player_id, v]) => ({
+        player_id,
+        price: v.price !== '' ? parseFloat(v.price) : null,
+        odds_fractional: v.odds_fractional || null,
+        world_ranking: v.world_ranking !== '' ? parseInt(v.world_ranking) : null,
+        is_in_field: true,
+      }));
+    // Also upsert removed players as not-in-field
+    const removedEntries = Object.entries(fieldMap)
+      .filter(([, v]) => !v.is_in_field)
+      .map(([player_id]) => ({ player_id, is_in_field: false }));
+    await upsertTournamentPlayers(selectedId, [...entries, ...removedEntries]);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  const inFieldIds = new Set(Object.entries(fieldMap).filter(([, v]) => v.is_in_field).map(([id]) => id));
+  const filtered = allPlayers.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    (p.country || '').toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-3 flex-wrap items-end">
+        <div className="flex-1 min-w-48">
+          <label className="label">Tournament</label>
+          <select value={selectedId} onChange={e => setSelectedId(e.target.value)} className="input appearance-none">
+            <option value="">Select tournament…</option>
+            {tournaments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+        {selectedId && (
+          <>
+            <button onClick={autoPriceAll} className="btn-secondary text-sm flex items-center gap-1.5">
+              <RefreshCw size={13} /> Auto-price all
+            </button>
+            <button onClick={handleSave} disabled={saving} className="btn-primary text-sm flex items-center gap-1.5">
+              {saving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+              {saved ? 'Saved ✓' : 'Save Field'}
+            </button>
+          </>
+        )}
+      </div>
+
+      {selectedId && (
+        <>
+          <div className="flex items-center gap-3 flex-wrap">
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              className="input flex-1 min-w-48" placeholder="Search players…" />
+            <span className="text-xs text-white/40">{inFieldIds.size} in field</span>
+          </div>
+
+          <div className="space-y-1.5">
+            {filtered.map(player => {
+              const entry = fieldMap[player.id];
+              const inField = entry?.is_in_field ?? false;
+              return (
+                <div key={player.id} className={`rounded-xl border p-3 transition-all ${
+                  inField ? 'border-masters-gold/30 bg-masters-gold/5' : 'border-white/8 bg-white/2 opacity-60'
+                }`}>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                      <input type="checkbox" checked={inField} onChange={() => toggleField(player)}
+                        className="w-4 h-4 accent-masters-gold" />
+                      <span className="font-medium text-masters-cream text-sm truncate">{player.name}</span>
+                      <span className="text-xs text-white/30 shrink-0">#{entry?.world_ranking || player.world_ranking} · {player.country}</span>
+                    </label>
+
+                    {inField && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-white/30">£</span>
+                          <input type="number" step="0.5" min="1" value={entry?.price ?? ''}
+                            onChange={e => updateField(player.id, 'price', e.target.value)}
+                            className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-masters-cream text-center focus:outline-none focus:border-masters-gold/40"
+                            placeholder="price" />
+                        </div>
+                        <input type="text" value={entry?.odds_fractional ?? ''}
+                          onChange={e => updateField(player.id, 'odds_fractional', e.target.value)}
+                          className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-masters-cream text-center focus:outline-none focus:border-masters-gold/40"
+                          placeholder="12/1" />
+                        <button onClick={() => autoPrice(player)}
+                          className="text-xs text-white/30 hover:text-masters-gold transition-colors px-1">
+                          auto
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Users Tab ────────────────────────────────────────────────────────────────
 function UsersTab() {
   const [profiles, setProfiles] = useState([]);
@@ -711,6 +890,7 @@ export default function AdminPage() {
 
       <div className="animate-fade-up-delay-2">
         {activeTab === 'Tournaments' && <TournamentsTab currentUserId={user?.id} />}
+        {activeTab === 'Field Setup' && <FieldSetupTab />}
         {activeTab === 'Scores'      && <ScoresTab />}
         {activeTab === 'Players'     && <PlayersTab />}
         {activeTab === 'Users'       && <UsersTab />}
