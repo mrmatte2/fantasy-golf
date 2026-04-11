@@ -74,6 +74,7 @@ export default function DraftPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('price');
+  const [hideCut, setHideCut] = useState(true);
   const [slotModal, setSlotModal] = useState(null);
   const [currentBudget, setCurrentBudget] = useState(0);
 
@@ -177,8 +178,11 @@ export default function DraftPage() {
     );
   }
 
+  const cutCount = players.filter(p => p.is_active && !p.is_withdrawn && !p.made_cut).length;
+
   const filtered = players
     .filter(p => {
+      if (hideCut && !p.made_cut && !p.is_withdrawn) return false;
       const q = search.toLowerCase();
       return p.name.toLowerCase().includes(q) || (p.country || '').toLowerCase().includes(q);
     })
@@ -295,6 +299,16 @@ export default function DraftPage() {
               <option value="ranking">Sort: World Ranking</option>
               <option value="odds">Sort: Odds</option>
             </select>
+            {cutCount > 0 && (
+              <button onClick={() => setHideCut(!hideCut)}
+                className={`h-10 px-3 rounded-lg border text-xs font-medium transition-colors ${
+                  hideCut
+                    ? 'border-red-800/40 bg-red-900/20 text-red-400'
+                    : 'border-white/10 text-white/40 hover:text-white/70'
+                }`}>
+                {hideCut ? `${cutCount} CUT hidden` : 'Show all'}
+              </button>
+            )}
           </div>
 
           <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">

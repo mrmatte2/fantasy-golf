@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import {
   getTournaments, createTournament, updateTournament, deleteTournament,
-  getAllPlayers, updatePlayer, createPlayer, deletePlayer,
+  getAllPlayers, updatePlayer, createPlayer, deletePlayer, markAllPlayersMissedCut,
   getAllProfiles, updateProfile,
   getPlayers, getAllScores, upsertScore, getHolePars,
 } from '../lib/supabase';
@@ -368,6 +368,7 @@ function PlayersTab() {
   const [addModal, setAddModal] = useState(false);
   const [newForm, setNewForm] = useState({ name: '', country: '', world_ranking: '', odds_fractional: '', odds_decimal: '', form_score: 5, price: '' });
   const [saving, setSaving] = useState(false);
+  const [cutMode, setCutMode] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -425,14 +426,69 @@ function PlayersTab() {
     setSaving(false);
   }
 
+  async function handleMarkAllCut() {
+    if (!window.confirm('Mark ALL players as missed cut? You can then toggle survivors back individually.')) return;
+    setSaving(true);
+    await markAllPlayersMissedCut();
+    await load();
+    setSaving(false);
+  }
+
+  async function toggleCut(player) {
+    await updatePlayer(player.id, { made_cut: !player.made_cut });
+    await load();
+  }
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-xs text-white/40">Global player list — update odds and prices before each event.</p>
-        <button onClick={() => setAddModal(true)} className="btn-secondary flex items-center gap-2 text-sm">
-          <Plus size={14} /> Add Player
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setCutMode(!cutMode)}
+            className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border transition-colors ${
+              cutMode ? 'bg-masters-gold/20 text-masters-gold border-masters-gold/40' : 'btn-secondary'
+            }`}>
+            {cutMode ? 'Exit Cut Mode' : 'Manage Cut'}
+          </button>
+          {!cutMode && (
+            <button onClick={() => setAddModal(true)} className="btn-secondary flex items-center gap-2 text-sm">
+              <Plus size={14} /> Add Player
+            </button>
+          )}
+        </div>
       </div>
+
+      {cutMode ? (
+        <div className="card-dark border-masters-gold/20">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <p className="text-sm text-masters-cream font-medium">Cut Management</p>
+              <p className="text-xs text-white/40 mt-0.5">
+                Click a player to toggle. Green = survived cut, red = missed cut.
+              </p>
+            </div>
+            <button onClick={handleMarkAllCut} disabled={saving}
+              className="btn-danger text-xs shrink-0 flex items-center gap-1.5">
+              {saving ? <RefreshCw size={12} className="animate-spin" /> : <X size={12} />}
+              Mark All as CUT
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {players.filter(p => p.is_active && !p.is_withdrawn).map(player => (
+              <button key={player.id} onClick={() => toggleCut(player)}
+                className={`text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
+                  player.made_cut
+                    ? 'border-green-700/50 bg-green-900/20 text-green-300 hover:bg-green-900/40'
+                    : 'border-red-800/40 bg-red-900/15 text-red-400/70 hover:bg-red-900/30'
+                }`}>
+                <div className="font-medium truncate">{player.name}</div>
+                <div className="text-xs opacity-60">#{player.world_ranking} · {player.made_cut ? 'Made Cut ✓' : 'Missed Cut ✗'}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
 
       {players.map(player => (
         <div key={player.id} className={`card-dark ${!player.is_active ? 'opacity-50' : ''}`}>
@@ -580,6 +636,8 @@ function PlayersTab() {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

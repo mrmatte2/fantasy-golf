@@ -131,6 +131,10 @@ export async function deletePlayer(playerId) {
   return await supabase.from('players').delete().eq('id', playerId);
 }
 
+export async function markAllPlayersMissedCut() {
+  return await supabase.from('players').update({ made_cut: false }).neq('id', '00000000-0000-0000-0000-000000000000');
+}
+
 // ─── Rosters (per user, per tournament) ───────────────────────────────────────
 
 export async function getUserRoster(userId, tournamentId) {
