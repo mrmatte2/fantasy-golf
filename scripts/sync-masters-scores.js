@@ -38,7 +38,10 @@ async function main() {
     },
   });
   if (!res.ok) throw new Error(`masters.com returned HTTP ${res.status}`);
-  const { player: masterPlayers = [] } = await res.json();
+  const raw = await res.json();
+  console.log('masters.com top-level keys:', Object.keys(raw));
+  const masterPlayers = raw.player || raw.players || raw.data?.player || raw.leaderboard?.player || [];
+  console.log(`Found ${masterPlayers.length} players in Masters feed`);
 
   // 4. Build upsert rows
   const upserts = [];
