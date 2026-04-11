@@ -16,13 +16,19 @@ async function main() {
   if (!TOURNAMENT_ID) throw new Error('TOURNAMENT_ID env var is required');
 
   // 1. Load hole pars (hole → par number)
-  const { data: pars } = await supabase.from('hole_pars').select('hole, par');
+  const { data: pars, error: parsError } = await supabase.from('hole_pars').select('hole, par');
+  if (parsError) throw new Error(`hole_pars query failed: ${parsError.message}`);
+  if (!pars?.length) throw new Error('hole_pars table is empty — check SUPABASE_URL and SUPABASE_SERVICE_KEY secrets');
   const parMap = Object.fromEntries(pars.map(p => [p.hole, p.par]));
+  console.log(`Loaded ${pars.length} hole pars`);
 
   // 2. Load our players for name matching
-  const { data: players } = await supabase.from('players').select('id, name, masters_id');
+  const { data: players, error: playersError } = await supabase.from('players').select('id, name, masters_id');
+  if (playersError) throw new Error(`players query failed: ${playersError.message}`);
+  if (!players?.length) throw new Error('No players found in DB');
   const byMastersId = Object.fromEntries(players.filter(p => p.masters_id).map(p => [p.masters_id, p.id]));
   const byName     = Object.fromEntries(players.map(p => [p.name.toLowerCase().trim(), p.id]));
+  console.log(`Loaded ${players.length} players from DB`);
 
   // 3. Fetch live Masters leaderboard
   const res = await fetch(MASTERS_URL, {
