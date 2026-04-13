@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTournament } from '../hooks/useTournament';
-import { getAllRosters, getAllScores, getTournament, getTournamentMembers } from '../lib/supabase';
+import { getAllRosters, getAllScores, getTournament, getTournamentMembers, getRoundSnapshots } from '../lib/supabase';
 import { Trophy, Medal, Star } from 'lucide-react';
 
 function formatVsPar(vp) {
@@ -39,45 +39,61 @@ export default function LeaderboardPage() {
 
   async function loadLeaderboard() {
     setLoading(true);
-    const [{ data: members }, { data: rosters }, { data: ft }] = await Promise.all([
+    const [{ data: members }, { data: rosters }, { data: ft }, { data: snapshots }] = await Promise.all([
       getTournamentMembers(tournamentId),
       getAllRosters(tournamentId),
       getTournament(tournamentId),
+      getRoundSnapshots(tournamentId),
     ]);
+
     // Resolve pga_tournament_id: scores belong to the PGA event, not the fantasy league
     const pgaId = ft?.pga_tournament_id ?? tournamentId;
     const { data: scores } = await getAllScores(pgaId);
 
     if (!members) { setLoading(false); return; }
 
-    // Determine rounds purely from score data — no dependency on current_round field
+    // Determine rounds purely from score data
     const roundsWithScores = [...new Set((scores || []).map(s => s.round))].sort((a, b) => a - b);
     setCompletedRounds(roundsWithScores);
 
-    // Build leaderboard per member
-    const board = members.map(member => {
-      const userRosters = (rosters || []).filter(r =>
-        r.user_id === member.user_id && r.slot_type === 'starter' && r.is_active
-      );
+    // Rounds that have a snapshot are "locked" — rosters are visible
+    const lockedRounds = new Set((snapshots || []).map(s => s.round));
 
+    const board = members.map(member => {
       let totalVsPar = 0;
       const roundBreakdown = [];
 
       for (const round of roundsWithScores) {
-        const starterScores = userRosters.map(r => {
-          const playerRoundScores = (scores || []).filter(
-            s => s.player_id === r.player_id && s.round === round
-          );
+        const isLocked = lockedRounds.has(round);
+
+        // Starters: use snapshot for locked rounds, current roster for live rounds
+        const startersForRound = isLocked
+          ? (snapshots || []).filter(s => s.user_id === member.user_id && s.round === round && s.slot_type === 'starter')
+          : (rosters || []).filter(r => r.user_id === member.user_id && r.slot_type === 'starter' && r.is_active);
+
+        const subsForRound = isLocked
+          ? (snapshots || []).filter(s => s.user_id === member.user_id && s.round === round && s.slot_type === 'sub')
+          : [];
+
+        const starterScores = startersForRound.map(r => {
+          const player = r.players;
+          const playerRoundScores = (scores || []).filter(s => s.player_id === r.player_id && s.round === round);
           const roundTotal = playerRoundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
-          return { playerName: r.players?.name, roundTotal, holesPlayed: playerRoundScores.length };
+          return { playerName: player?.name, playerId: r.player_id, roundTotal, holesPlayed: playerRoundScores.length };
         });
 
-        const scored = starterScores.filter(s => s.holesPlayed > 0)
-          .sort((a, b) => a.roundTotal - b.roundTotal);
+        const subScores = subsForRound.map(r => {
+          const player = r.players;
+          const playerRoundScores = (scores || []).filter(s => s.player_id === r.player_id && s.round === round);
+          const roundTotal = playerRoundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
+          return { playerName: player?.name, playerId: r.player_id, roundTotal, holesPlayed: playerRoundScores.length };
+        });
+
+        const scored = starterScores.filter(s => s.holesPlayed > 0).sort((a, b) => a.roundTotal - b.roundTotal);
         const best4 = scored.slice(0, 4);
         const roundVsPar = best4.reduce((sum, s) => sum + s.roundTotal, 0);
         totalVsPar += roundVsPar;
-        roundBreakdown.push({ round, roundVsPar, starterScores, best4 });
+        roundBreakdown.push({ round, roundVsPar, starterScores, subScores, best4, isLocked });
       }
 
       return {
@@ -86,7 +102,6 @@ export default function LeaderboardPage() {
         teamName: member.team_name,
         totalVsPar: roundsWithScores.length > 0 ? totalVsPar : null,
         roundBreakdown,
-        starters: userRosters,
       };
     });
 
@@ -168,7 +183,6 @@ export default function LeaderboardPage() {
                           <span className="text-xs px-2 py-0.5 rounded-full bg-masters-gold/20 text-masters-gold border border-masters-gold/30">You</span>
                         )}
                       </div>
-                      <div className="text-xs text-white/40 mt-0.5">{entry.starters.length} starters selected</div>
                     </div>
                   </div>
 
@@ -182,7 +196,7 @@ export default function LeaderboardPage() {
                         </div>
                         {entry.roundBreakdown.length > 1 && (
                           <div className="text-xs text-white/30">
-                            {entry.roundBreakdown.map(r => formatVsPar(r.roundVsPar)).join(' / ')}
+                            {entry.roundBreakdown.map(r => r.isLocked ? formatVsPar(r.roundVsPar) : '?').join(' / ')}
                           </div>
                         )}
                       </div>
@@ -192,46 +206,57 @@ export default function LeaderboardPage() {
 
                 {isExpanded && (
                   <div className="px-4 pb-4 border-t border-white/5">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                      <div>
-                        <div className="text-xs text-white/30 uppercase tracking-wider mb-2">Starters</div>
-                        <div className="space-y-1.5">
-                          {entry.starters.map(r => (
-                            <div key={r.id} className="flex items-center justify-between text-sm">
-                              <span className="text-masters-cream">{r.players?.name}</span>
-                              <span className="text-white/30 text-xs">#{r.players?.world_ranking}</span>
-                            </div>
-                          ))}
+                    {entry.roundBreakdown.map(rb => (
+                      <div key={rb.round} className="mt-4">
+                        <div className="text-xs text-white/30 uppercase tracking-wider mb-2 flex items-center gap-2">
+                          <span>Round {rb.round}</span>
+                          {rb.isLocked
+                            ? <span className="text-green-600/60">✓ locked</span>
+                            : <span className="text-white/20">• in progress</span>
+                          }
+                          {rb.isLocked && (
+                            <span className={`ml-auto font-mono text-sm ${vsParClass(rb.roundVsPar)}`}>
+                              {formatVsPar(rb.roundVsPar)}
+                            </span>
+                          )}
                         </div>
+                        {!rb.isLocked ? (
+                          <div className="text-xs text-white/20 italic px-1">
+                            Roster hidden until first scores arrive
+                          </div>
+                        ) : (
+                          <div className="space-y-0.5">
+                            {rb.starterScores.map(ss => {
+                              const isCounting = rb.best4.some(b => b.playerId === ss.playerId);
+                              return (
+                                <div key={ss.playerId} className={`flex items-center justify-between text-xs py-0.5 ${
+                                  isCounting ? 'text-masters-cream' : 'text-white/30'
+                                }`}>
+                                  <span className="flex items-center gap-1">
+                                    {isCounting && <Star size={9} className="text-masters-gold fill-masters-gold" />}
+                                    {ss.playerName}
+                                  </span>
+                                  <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
+                                    {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {rb.subScores.map(ss => (
+                              <div key={ss.playerId} className="flex items-center justify-between text-xs py-0.5 text-white/20">
+                                <span className="flex items-center gap-2">
+                                  <span className="text-white/15 text-xs italic">sub</span>
+                                  {ss.playerName}
+                                </span>
+                                <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
+                                  {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-
-                      {entry.roundBreakdown.length > 0 && (
-                        <div>
-                          <div className="text-xs text-white/30 uppercase tracking-wider mb-2">Round Scores</div>
-                          {entry.roundBreakdown.map(rb => (
-                            <div key={rb.round} className="mb-3">
-                              <div className="text-xs text-white/40 mb-1">Round {rb.round}</div>
-                              {rb.starterScores.map((ss, i) => {
-                                const isCounting = rb.best4.some(b => b.playerName === ss.playerName);
-                                return (
-                                  <div key={i} className={`flex items-center justify-between text-xs py-0.5 ${
-                                    isCounting ? 'text-masters-cream' : 'text-white/30'
-                                  }`}>
-                                    <span className="flex items-center gap-1">
-                                      {isCounting && <Star size={9} className="text-masters-gold fill-masters-gold" />}
-                                      {ss.playerName}
-                                    </span>
-                                    <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
-                                      {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    ))}
                   </div>
                 )}
               </div>

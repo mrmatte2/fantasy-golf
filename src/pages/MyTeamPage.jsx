@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTournament } from '../hooks/useTournament';
 import {
-  getUserRoster, getPlayerScores, getHolePars, updateRosterEntry, getPlayers,
-  getUserMembership, joinTournament,
+  getUserRoster, getPlayerScores, getHolePars, updateRosterEntry,
+  getUserMembership, joinTournament, getRoundSnapshots, getTournament,
 } from '../lib/supabase';
 import { ArrowLeftRight, ChevronDown, ChevronRight, Lock, Star, LogIn } from 'lucide-react';
 
@@ -157,6 +157,7 @@ export default function MyTeamPage() {
   const [scores, setScores] = useState({});
   const [pars, setPars] = useState([]);
   const [membership, setMembership] = useState(undefined);
+  const [lockedRounds, setLockedRounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [subModal, setSubModal] = useState(null);
   const [subs, setSubs] = useState([]);
@@ -166,32 +167,38 @@ export default function MyTeamPage() {
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState('');
 
-  const isLocked = tournament?.is_locked;
-  const currentRound = tournament?.current_round || 0;
-
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [{ data: rst }, { data: holePars }, { data: mem }] = await Promise.all([
+    const [{ data: rst }, { data: mem }, { data: snapData }, { data: ft }] = await Promise.all([
       getUserRoster(user.id, tournamentId),
-      getHolePars(),
       getUserMembership(tournamentId, user.id),
+      getRoundSnapshots(tournamentId),
+      getTournament(tournamentId),
     ]);
+
+    const pgaTournamentId = ft?.pga_tournament_id;
     const rosterData = rst || [];
     setRoster(rosterData);
-    setPars(holePars || []);
     setMembership(mem ?? null);
+    setLockedRounds([...new Set((snapData || []).map(s => s.round))].sort());
 
-    const scoreResults = await Promise.all(
-      rosterData.map(async r => {
-        const { data } = await getPlayerScores(r.player_id, tournamentId);
-        return { playerId: r.player_id, scores: data || [] };
-      })
-    );
-    setScores(Object.fromEntries(scoreResults.map(s => [s.playerId, s.scores])));
+    const [holeParsResult, ...scoreResponses] = await Promise.all([
+      getHolePars(pgaTournamentId),
+      ...rosterData.map(r => getPlayerScores(r.player_id, pgaTournamentId ?? tournamentId)),
+    ]);
+
+    setPars(holeParsResult.data || []);
+    setScores(Object.fromEntries(
+      scoreResponses.map(({ data }, i) => [rosterData[i].player_id, data || []])
+    ));
     setLoading(false);
   }, [user.id, tournamentId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const allScoresList = Object.values(scores).flat();
+  const currentRound = allScoresList.length > 0 ? Math.max(...allScoresList.map(s => s.round)) : 0;
+  const isLocked = currentRound > 0 && lockedRounds.includes(currentRound);
 
   const starters = roster.filter(r => r.slot_type === 'starter' && r.is_active);
   const subsRoster = roster.filter(r => r.slot_type === 'sub' && r.is_active);
@@ -291,7 +298,7 @@ export default function MyTeamPage() {
 
       {isLocked && (
         <div className="mb-5 px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 flex items-center gap-3 text-red-300 text-sm">
-          <Lock size={15} /> Roster is locked for the current round. Substitutions open between rounds.
+          <Lock size={15} /> Round {currentRound} is locked. Substitutions available between rounds.
         </div>
       )}
 

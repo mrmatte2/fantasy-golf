@@ -366,6 +366,23 @@ export async function getHolePars(pgaTournamentId) {
   return getPgaHolePars(pgaTournamentId ?? null);
 }
 
+// ─── Roster Round Snapshots ───────────────────────────────────────────────────
+
+export async function getRoundSnapshots(tournamentId) {
+  return await supabase
+    .from('roster_round_players')
+    .select('round, user_id, player_id, slot_type, players(id, name, world_ranking, is_withdrawn, made_cut)')
+    .eq('tournament_id', tournamentId);
+}
+
+export async function getLockedRounds(tournamentId) {
+  const { data } = await supabase
+    .from('roster_round_players')
+    .select('round')
+    .eq('tournament_id', tournamentId);
+  return [...new Set((data || []).map(r => r.round))].sort();
+}
+
 // ─── Pricing formula ──────────────────────────────────────────────────────────
 
 export function calculatePrice(worldRanking, oddsDecimal, formScore) {

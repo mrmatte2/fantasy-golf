@@ -86,6 +86,45 @@ async function createPlayer(name) {
   return data.id;
 }
 
+// ─── Roster snapshot ──────────────────────────────────────────────────────────
+
+async function snapshotRostersIfNewRound(pgaTournamentId) {
+  const { data: fantasyTournaments } = await supabase
+    .from('tournaments')
+    .select('id')
+    .eq('pga_tournament_id', pgaTournamentId);
+
+  for (const ft of fantasyTournaments || []) {
+    const { data: scoredRounds } = await supabase
+      .from('scores')
+      .select('round')
+      .eq('pga_tournament_id', pgaTournamentId)
+      .limit(1000);
+    const rounds = [...new Set((scoredRounds || []).map(s => s.round))];
+
+    const { data: snappedRounds } = await supabase
+      .from('roster_round_players')
+      .select('round')
+      .eq('tournament_id', ft.id);
+    const snapped = new Set((snappedRounds || []).map(r => r.round));
+
+    for (const round of rounds) {
+      if (snapped.has(round)) continue;
+      const { data: rosters } = await supabase
+        .from('rosters')
+        .select('user_id, player_id, slot_type')
+        .eq('tournament_id', ft.id)
+        .eq('is_active', true);
+      if (!rosters?.length) continue;
+      const rows = rosters.map(r => ({ ...r, tournament_id: ft.id, round }));
+      await supabase
+        .from('roster_round_players')
+        .upsert(rows, { onConflict: 'tournament_id,user_id,player_id,round' });
+      console.log(`  Snapshotted rosters for fantasy tournament ${ft.id} round ${round}`);
+    }
+  }
+}
+
 // ─── Parsers ──────────────────────────────────────────────────────────────────
 // Each parser receives (url: string) and is responsible for fetching the data
 // and upserting scores into the `scores` table.
@@ -174,6 +213,8 @@ const PARSERS = {
       if (error) throw new Error(`Upsert failed: ${error.message}`);
       totalUpserted += batch.length;
     }
+
+    await snapshotRostersIfNewRound(pgaTournamentId);
 
     return { playersMatched: matched, playersCreated: created, scoresUpserted: totalUpserted };
   },
