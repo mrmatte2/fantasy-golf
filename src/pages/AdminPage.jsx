@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import {
   getTournaments, createTournament, updateTournament, deleteTournament,
+  supabase,
   getPgaTournaments, createPgaTournament, updatePgaTournament, deletePgaTournament,
   getPgaField, upsertPgaField, getPgaHolePars, upsertPgaHolePars, getPgaFieldCounts,
   getAllPlayers, updatePlayer, createPlayer, markAllPlayersMissedCut,
@@ -169,8 +170,28 @@ function PgaEventsTab() {
 
   async function saveField() {
     setSaving('field');
-    const entries = Object.entries(fieldMap).map(([player_id, is_in_field]) => ({ player_id, is_in_field }));
+
+    // Create any new players from the paste import, then add them to the field
+    let currentFieldMap = { ...fieldMap };
+    if (importNewNames.length) {
+      for (const name of importNewNames) {
+        const { data: newPlayer } = await supabase
+          .from('players')
+          .insert({ name, is_active: true, made_cut: true })
+          .select('id, name')
+          .single();
+        if (newPlayer) {
+          currentFieldMap[newPlayer.id] = true;
+          setAllPlayers(prev => [...prev, newPlayer]);
+        }
+      }
+      setImportNewNames([]);
+      setFieldMap(currentFieldMap);
+    }
+
+    const entries = Object.entries(currentFieldMap).map(([player_id, is_in_field]) => ({ player_id, is_in_field }));
     await upsertPgaField(selectedId, entries);
+    getPgaFieldCounts().then(counts => setFieldCounts(counts));
     setSaving('');
     markSaved('field');
   }
@@ -188,6 +209,58 @@ function PgaEventsTab() {
   }
 
   const [fieldSearch, setFieldSearch] = useState('');
+  const [importModal, setImportModal] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importPreview, setImportPreview] = useState(null); // null | { matched, newPlayers, names }
+
+  // Exhaustive list of countries/territories that appear in PGA Tour data.
+  // Any line matching one of these is silently dropped during import.
+  const GOLF_COUNTRIES = new Set([
+    'argentina','australia','austria','bahamas','barbados','belgium','brazil',
+    'canada','chile','china','colombia','costa rica','czech republic','denmark',
+    'england','fiji','finland','france','germany','ghana','great britain',
+    'hungary','india','indonesia','ireland','italy','jamaica','japan',
+    'kenya','korea','malaysia','mexico','namibia','netherlands','new zealand',
+    'nicaragua','nigeria','northern ireland','norway','panama','paraguay',
+    'peru','philippines','portugal','puerto rico','qatar','russia','scotland',
+    'singapore','south africa','south korea','spain','sweden','switzerland',
+    'taiwan','thailand','trinidad and tobago','turkey','ukraine','united states',
+    'usa','us','uk','uruguay','venezuela','wales','zimbabwe',
+  ]);
+
+  function parseAndPreview(text) {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+    // Drop any line that is a known country name (case-insensitive).
+    // Everything else is treated as a player name — order-independent.
+    const names = lines.filter(l => !GOLF_COUNTRIES.has(l.toLowerCase()));
+
+    const norm = n => n.toLowerCase().trim().replace(/\s+/g, ' ');
+    const matched = [];
+    const newPlayers = [];
+    for (const name of names) {
+      const player = allPlayers.find(p => norm(p.name) === norm(name));
+      if (player) matched.push({ name, player });
+      else newPlayers.push({ name });
+    }
+    setImportPreview({ matched, newPlayers, total: names.length });
+  }
+
+  function applyImport() {
+    if (!importPreview) return;
+    const updates = {};
+    for (const { player } of importPreview.matched) updates[player.id] = true;
+    // New players won't have IDs yet — they'll be created on Save Field
+    // Store them separately so saveField can handle them
+    setImportNewNames(importPreview.newPlayers.map(p => p.name));
+    setFieldMap(m => ({ ...m, ...updates }));
+    setImportModal(false);
+    setImportText('');
+    setImportPreview(null);
+  }
+
+  const [importNewNames, setImportNewNames] = useState([]);
+
   const inField = allPlayers
     .filter(p => fieldMap[p.id])
     .filter(p => !fieldSearch || p.name.toLowerCase().includes(fieldSearch.toLowerCase()) || (p.country || '').toLowerCase().includes(fieldSearch.toLowerCase()))
@@ -425,15 +498,25 @@ function PgaEventsTab() {
                 <h3 className="font-display font-semibold text-masters-cream">Field</h3>
                 <p className="text-xs text-white/30 mt-0.5">Click a player to move them between panels</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
                 <input value={fieldSearch} onChange={e => setFieldSearch(e.target.value)}
-                  className="input text-sm py-2 w-44" placeholder="Search…" />
+                  className="input text-sm py-2 w-36" placeholder="Search…" />
+                <button onClick={() => { setImportText(''); setImportPreview(null); setImportModal(true); }}
+                  className="btn-secondary text-sm flex items-center gap-2">
+                  <Plus size={13} /> Paste import
+                </button>
                 <button onClick={saveField} disabled={saving === 'field'} className="btn-primary text-sm flex items-center gap-2">
                   {saving === 'field' ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
                   {savedSection === 'field' ? 'Saved ✓' : saving === 'field' ? 'Saving…' : 'Save Field'}
                 </button>
               </div>
             </div>
+
+            {importNewNames.length > 0 && (
+              <div className="mb-3 px-3 py-2 rounded-lg bg-yellow-900/20 border border-yellow-800/30 text-xs text-yellow-300">
+                {importNewNames.length} new player{importNewNames.length !== 1 ? 's' : ''} will be created when you save: {importNewNames.join(', ')}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* In Field */}
@@ -497,6 +580,69 @@ function PgaEventsTab() {
           </div>
         </div>
         </>
+      )}
+
+      {/* Paste Import modal */}
+      {importModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          onClick={() => setImportModal(false)}>
+          <div className="card-modal max-w-lg w-full" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-bold text-masters-cream">Paste Field Import</h3>
+              <button onClick={() => setImportModal(false)} className="text-white/30 hover:text-white/60"><X size={18} /></button>
+            </div>
+            <p className="text-xs text-white/40 mb-3">
+              Paste player names from any source. Supports RotoWire format (name then country on alternating lines) or a plain list of names.
+            </p>
+            <textarea
+              value={importText}
+              onChange={e => { setImportText(e.target.value); setImportPreview(null); }}
+              className="input w-full font-mono text-xs resize-none h-48 mb-3"
+              placeholder={'Ludvig Aberg\nSweden\nScottie Scheffler\nUSA\n…'}
+            />
+            {!importPreview ? (
+              <button
+                onClick={() => parseAndPreview(importText)}
+                disabled={!importText.trim()}
+                className="btn-primary w-full">
+                Preview import
+              </button>
+            ) : (
+              <div>
+                <div className="rounded-lg bg-black/20 border border-white/8 p-3 mb-3 space-y-1.5 max-h-48 overflow-y-auto">
+                  {importPreview.matched.length > 0 && (
+                    <div>
+                      <div className="text-xs text-green-400/80 uppercase tracking-wider mb-1">
+                        Matched ({importPreview.matched.length})
+                      </div>
+                      {importPreview.matched.map(({ name }) => (
+                        <div key={name} className="text-xs text-white/50 py-0.5 pl-2">{name}</div>
+                      ))}
+                    </div>
+                  )}
+                  {importPreview.newPlayers.length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-xs text-yellow-400/80 uppercase tracking-wider mb-1">
+                        New players to create ({importPreview.newPlayers.length})
+                      </div>
+                      {importPreview.newPlayers.map(({ name }) => (
+                        <div key={name} className="text-xs text-yellow-300/50 py-0.5 pl-2">{name}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={applyImport} className="btn-primary flex-1">
+                    Add {importPreview.total} players to field
+                  </button>
+                  <button onClick={() => setImportPreview(null)} className="btn-secondary">
+                    Re-paste
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Create modal */}
