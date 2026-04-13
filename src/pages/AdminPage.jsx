@@ -2,25 +2,404 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import {
   getTournaments, createTournament, updateTournament, deleteTournament,
-  getAllPlayers, updatePlayer, createPlayer, deletePlayer, markAllPlayersMissedCut,
+  getPgaTournaments, createPgaTournament, updatePgaTournament, deletePgaTournament,
+  getPgaField, upsertPgaField, getPgaHolePars, upsertPgaHolePars,
+  getAllPlayers, updatePlayer, createPlayer, markAllPlayersMissedCut,
   getAllProfiles, updateProfile,
-  getPlayers, getAllScores, upsertScore, getHolePars,
-  getTournamentField, upsertTournamentPlayers, calculatePrice,
+  getPlayers, getAllScores, upsertScore,
+  getTournamentPlayers, upsertTournamentPlayers,
 } from '../lib/supabase';
-import { Settings, Lock, Unlock, Edit3, Save, X, RefreshCw, Plus, Trash2, Trophy, List } from 'lucide-react';
+import { Settings, Lock, Unlock, Edit3, Save, X, RefreshCw, Plus, Trash2, Trophy } from 'lucide-react';
 
-const TABS = ['Tournaments', 'Field Setup', 'Sync', 'Scores', 'Players', 'Users'];
+const TABS = ['PGA Events', 'Tournaments', 'Field Pricing', 'Scores', 'Players', 'Users'];
+
+// ─── PGA Events Tab ───────────────────────────────────────────────────────────
+function PgaEventsTab() {
+  const [events, setEvents] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [createModal, setCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({ name: '', course: '', year: new Date().getFullYear() });
+  const [infoForm, setInfoForm] = useState({});
+  const [syncForm, setSyncForm] = useState({});
+  const [holePars, setHolePars] = useState({});
+  const [allPlayers, setAllPlayers] = useState([]);
+  const [fieldMap, setFieldMap] = useState({});
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(''); // 'info' | 'sync' | 'pars' | 'field'
+  const [savedSection, setSavedSection] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  // Augusta National hole pars
+  const AUGUSTA_PARS = [4, 5, 4, 3, 4, 3, 4, 5, 4, 4, 4, 3, 5, 4, 5, 3, 4, 4];
+
+  useEffect(() => {
+    loadEvents();
+    getAllPlayers().then(({ data }) => setAllPlayers(data || []));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId || !events.length) return;
+    const event = events.find(e => e.id === selectedId);
+    if (!event) return;
+    setInfoForm({ name: event.name, course: event.course || '', year: event.year || '' });
+    setSyncForm({
+      sync_url: event.sync_url || '',
+      sync_format: event.sync_format || 'masters',
+      sync_start_date: event.sync_start_date || '',
+      sync_end_date: event.sync_end_date || '',
+      sync_enabled: event.sync_enabled || false,
+    });
+    getPgaHolePars(selectedId).then(({ data }) => {
+      const map = {};
+      (data || []).forEach(p => { map[p.hole] = p.par; });
+      setHolePars(map);
+    });
+    getPgaField(selectedId).then(({ data }) => {
+      const map = {};
+      (data || []).forEach(fp => { map[fp.player_id] = true; });
+      setFieldMap(map);
+    });
+  }, [selectedId, events]);
+
+  async function loadEvents() {
+    const { data } = await getPgaTournaments();
+    setEvents(data || []);
+    if (!selectedId && data?.length) setSelectedId(data[0].id);
+  }
+
+  function markSaved(section) {
+    setSavedSection(section);
+    setTimeout(() => setSavedSection(''), 2000);
+  }
+
+  async function handleCreate() {
+    if (!createForm.name.trim()) return;
+    const { data } = await createPgaTournament({
+      name: createForm.name.trim(),
+      course: createForm.course || null,
+      year: createForm.year ? parseInt(createForm.year) : null,
+    });
+    setCreateModal(false);
+    setCreateForm({ name: '', course: '', year: new Date().getFullYear() });
+    await loadEvents();
+    if (data) setSelectedId(data.id);
+  }
+
+  async function handleDelete() {
+    await deletePgaTournament(selectedId);
+    setDeleteConfirm(false);
+    setSelectedId('');
+    await loadEvents();
+  }
+
+  async function saveInfo() {
+    setSaving('info');
+    await updatePgaTournament(selectedId, {
+      name: infoForm.name,
+      course: infoForm.course || null,
+      year: infoForm.year ? parseInt(infoForm.year) : null,
+    });
+    await loadEvents();
+    setSaving('');
+    markSaved('info');
+  }
+
+  async function saveSync() {
+    setSaving('sync');
+    await updatePgaTournament(selectedId, {
+      sync_url: syncForm.sync_url || null,
+      sync_format: syncForm.sync_format,
+      sync_start_date: syncForm.sync_start_date || null,
+      sync_end_date: syncForm.sync_end_date || null,
+      sync_enabled: syncForm.sync_enabled,
+    });
+    await loadEvents();
+    setSaving('');
+    markSaved('sync');
+  }
+
+  async function saveHolePars() {
+    setSaving('pars');
+    const pars = Object.entries(holePars)
+      .filter(([, par]) => par !== '' && par !== undefined)
+      .map(([hole, par]) => ({ hole: parseInt(hole), par: parseInt(par) }));
+    await upsertPgaHolePars(selectedId, pars);
+    setSaving('');
+    markSaved('pars');
+  }
+
+  async function saveField() {
+    setSaving('field');
+    const entries = Object.entries(fieldMap).map(([player_id, is_in_field]) => ({ player_id, is_in_field }));
+    await upsertPgaField(selectedId, entries);
+    setSaving('');
+    markSaved('field');
+  }
+
+  function getSyncStatus() {
+    if (!syncForm.sync_enabled) return { label: 'Disabled', cls: 'bg-white/5 text-white/30 border-white/10' };
+    const today = new Date().toISOString().slice(0, 10);
+    if (syncForm.sync_start_date && today < syncForm.sync_start_date) {
+      const days = Math.ceil((new Date(syncForm.sync_start_date) - new Date()) / 86400000);
+      return { label: `Starts in ${days}d`, cls: 'bg-yellow-900/30 text-yellow-300 border-yellow-800/40' };
+    }
+    if (syncForm.sync_end_date && today > syncForm.sync_end_date)
+      return { label: 'Ended', cls: 'bg-white/5 text-white/40 border-white/10' };
+    return { label: 'Active now', cls: 'bg-green-900/30 text-green-300 border-green-800/40' };
+  }
+
+  const filtered = allPlayers.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    (p.country || '').toLowerCase().includes(search.toLowerCase())
+  );
+  const inFieldCount = Object.values(fieldMap).filter(Boolean).length;
+  const parsEntered = Object.values(holePars).filter(p => p !== '' && p !== undefined).length;
+  const parTotal = Object.values(holePars).reduce((s, p) => s + (parseInt(p) || 0), 0);
+  const syncStatus = getSyncStatus();
+
+  return (
+    <div className="space-y-4">
+      {/* Event selector */}
+      <div className="flex gap-3 items-end flex-wrap">
+        <div className="flex-1 min-w-48">
+          <label className="label">PGA Event</label>
+          <select value={selectedId} onChange={e => setSelectedId(e.target.value)} className="input appearance-none">
+            {events.length === 0 && <option value="">No events yet</option>}
+            {events.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+        </div>
+        <button onClick={() => setCreateModal(true)} className="btn-secondary flex items-center gap-2 text-sm">
+          <Plus size={14} /> New PGA Event
+        </button>
+        {selectedId && (
+          <button onClick={() => setDeleteConfirm(true)}
+            className="p-2 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-900/20 transition-colors">
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+
+      {selectedId && (
+        <div className="space-y-4">
+          {/* Basic Info */}
+          <div className="card-dark">
+            <h3 className="font-display font-semibold text-masters-cream mb-4">Basic Info</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="label">Event Name</label>
+                <input value={infoForm.name || ''} onChange={e => setInfoForm(f => ({ ...f, name: e.target.value }))}
+                  className="input" />
+              </div>
+              <div>
+                <label className="label">Course</label>
+                <input value={infoForm.course || ''} onChange={e => setInfoForm(f => ({ ...f, course: e.target.value }))}
+                  className="input" placeholder="e.g. Augusta National" />
+              </div>
+              <div>
+                <label className="label">Year</label>
+                <input type="number" value={infoForm.year || ''} onChange={e => setInfoForm(f => ({ ...f, year: e.target.value }))}
+                  className="input" />
+              </div>
+            </div>
+            <button onClick={saveInfo} disabled={saving === 'info'} className="btn-primary text-sm mt-4 flex items-center gap-2">
+              {saving === 'info' ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+              {savedSection === 'info' ? 'Saved ✓' : saving === 'info' ? 'Saving…' : 'Save Info'}
+            </button>
+          </div>
+
+          {/* Sync Config */}
+          <div className="card-dark">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-semibold text-masters-cream">Score Sync</h3>
+              <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${syncStatus.cls}`}>
+                {syncStatus.label}
+              </span>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 cursor-pointer"
+                onClick={() => setSyncForm(f => ({ ...f, sync_enabled: !f.sync_enabled }))}>
+                <div className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
+                  syncForm.sync_enabled ? 'bg-green-600' : 'bg-white/10'
+                }`}>
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                    syncForm.sync_enabled ? 'translate-x-5' : 'translate-x-0.5'
+                  }`} />
+                </div>
+                <span className="text-sm text-white/70 select-none">Enable automated score sync</span>
+              </div>
+              <div>
+                <label className="label">Score API URL</label>
+                <input type="url" value={syncForm.sync_url}
+                  onChange={e => setSyncForm(f => ({ ...f, sync_url: e.target.value }))}
+                  className="input w-full font-mono text-xs"
+                  placeholder="https://www.masters.com/en_US/scores/feeds/2026/scores.json" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="label">Format / Parser</label>
+                  <select value={syncForm.sync_format}
+                    onChange={e => setSyncForm(f => ({ ...f, sync_format: e.target.value }))}
+                    className="input appearance-none w-full">
+                    <option value="masters">Masters (masters.com)</option>
+                    <option value="pga_tour">PGA Tour (coming soon)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Start Date</label>
+                  <input type="date" value={syncForm.sync_start_date}
+                    onChange={e => setSyncForm(f => ({ ...f, sync_start_date: e.target.value }))}
+                    className="input w-full" />
+                </div>
+                <div>
+                  <label className="label">End Date</label>
+                  <input type="date" value={syncForm.sync_end_date}
+                    onChange={e => setSyncForm(f => ({ ...f, sync_end_date: e.target.value }))}
+                    className="input w-full" />
+                </div>
+              </div>
+              <p className="text-xs text-white/30">
+                The GitHub Action runs every 15 minutes and only syncs when today falls within the date window.
+              </p>
+              <button onClick={saveSync} disabled={saving === 'sync'} className="btn-primary text-sm flex items-center gap-2">
+                {saving === 'sync' ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+                {savedSection === 'sync' ? 'Saved ✓' : saving === 'sync' ? 'Saving…' : 'Save Sync Config'}
+              </button>
+            </div>
+          </div>
+
+          {/* Hole Pars */}
+          <div className="card-dark">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-semibold text-masters-cream">Hole Pars</h3>
+              <button onClick={() => {
+                const map = {};
+                AUGUSTA_PARS.forEach((par, i) => { map[i + 1] = par; });
+                setHolePars(map);
+              }} className="text-xs text-masters-gold hover:text-masters-gold/70 transition-colors">
+                Pre-fill Augusta
+              </button>
+            </div>
+            <div className="grid grid-cols-6 sm:grid-cols-9 gap-2 mb-4">
+              {Array.from({ length: 18 }, (_, i) => i + 1).map(hole => (
+                <div key={hole} className="text-center">
+                  <div className="text-xs text-white/30 mb-1">H{hole}</div>
+                  <input type="number" min="3" max="5" value={holePars[hole] ?? ''}
+                    onChange={e => setHolePars(p => ({ ...p, [hole]: e.target.value }))}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-1 py-1.5 text-xs text-masters-cream text-center focus:outline-none focus:border-masters-gold/40" />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={saveHolePars} disabled={saving === 'pars'} className="btn-primary text-sm flex items-center gap-2">
+                {saving === 'pars' ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+                {savedSection === 'pars' ? 'Saved ✓' : saving === 'pars' ? 'Saving…' : 'Save Pars'}
+              </button>
+              <span className="text-xs text-white/30">
+                {parsEntered}/18 holes · Par {parTotal || '—'}
+              </span>
+            </div>
+          </div>
+
+          {/* Field Management */}
+          <div className="card-dark">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-semibold text-masters-cream">Field</h3>
+              <span className="text-xs text-white/40">{inFieldCount} players in field</span>
+            </div>
+            <div className="flex gap-3 mb-3 flex-wrap">
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                className="input flex-1 min-w-40" placeholder="Search players…" />
+              <button onClick={saveField} disabled={saving === 'field'} className="btn-primary text-sm flex items-center gap-2">
+                {saving === 'field' ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+                {savedSection === 'field' ? 'Saved ✓' : saving === 'field' ? 'Saving…' : 'Save Field'}
+              </button>
+            </div>
+            <div className="space-y-1 max-h-96 overflow-y-auto">
+              {filtered.map(player => (
+                <label key={player.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                  fieldMap[player.id]
+                    ? 'bg-masters-gold/5 border border-masters-gold/20'
+                    : 'border border-white/5 hover:border-white/10'
+                }`}>
+                  <input type="checkbox" checked={!!fieldMap[player.id]}
+                    onChange={e => setFieldMap(m => ({ ...m, [player.id]: e.target.checked }))}
+                    className="w-4 h-4 accent-masters-gold flex-shrink-0" />
+                  <span className="text-sm text-masters-cream flex-1 truncate">{player.name}</span>
+                  <span className="text-xs text-white/30 shrink-0">#{player.world_ranking} · {player.country}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create modal */}
+      {createModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          onClick={() => setCreateModal(false)}>
+          <div className="card max-w-md w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="font-display font-bold text-masters-cream mb-5">New PGA Event</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="label">Event Name *</label>
+                <input value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))}
+                  className="input" placeholder="e.g. The Masters 2026" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Course</label>
+                  <input value={createForm.course} onChange={e => setCreateForm(f => ({ ...f, course: e.target.value }))}
+                    className="input" placeholder="e.g. Augusta National" />
+                </div>
+                <div>
+                  <label className="label">Year</label>
+                  <input type="number" value={createForm.year} onChange={e => setCreateForm(f => ({ ...f, year: e.target.value }))}
+                    className="input" />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={handleCreate} disabled={!createForm.name.trim()} className="btn-primary flex-1">Create</button>
+              <button onClick={() => setCreateModal(false)} className="btn-secondary flex-1">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          onClick={() => setDeleteConfirm(false)}>
+          <div className="card max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="font-display font-bold text-masters-cream mb-2">Delete PGA Event?</h3>
+            <p className="text-white/40 text-sm mb-5">
+              This will permanently delete <strong className="text-white/70">{events.find(e => e.id === selectedId)?.name}</strong> and all associated scores. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={handleDelete} className="btn-danger flex-1">Delete</button>
+              <button onClick={() => setDeleteConfirm(false)} className="btn-secondary flex-1">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Tournaments Tab ──────────────────────────────────────────────────────────
 function TournamentsTab({ currentUserId }) {
   const [tournaments, setTournaments] = useState([]);
+  const [pgaEvents, setPgaEvents] = useState([]);
   const [modal, setModal] = useState(null); // null | 'create' | tournament object (edit)
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    getPgaTournaments().then(({ data }) => setPgaEvents(data || []));
+  }, []);
 
   async function load() {
     const { data } = await getTournaments();
@@ -28,13 +407,13 @@ function TournamentsTab({ currentUserId }) {
   }
 
   function openCreate() {
-    setForm({ name: '', course: '', year: new Date().getFullYear(), budget: 100, current_round: 0, draft_open: true, is_locked: false });
+    setForm({ name: '', pga_tournament_id: '', budget: 100, draft_open: true, is_locked: false });
     setSaveError('');
     setModal('create');
   }
 
   function openEdit(t) {
-    setForm({ name: t.name, course: t.course || '', year: t.year || '', budget: t.budget, current_round: t.current_round, draft_open: t.draft_open, is_locked: t.is_locked });
+    setForm({ name: t.name, pga_tournament_id: t.pga_tournament_id || '', budget: t.budget, draft_open: t.draft_open, is_locked: t.is_locked });
     setSaveError('');
     setModal(t);
   }
@@ -43,14 +422,17 @@ function TournamentsTab({ currentUserId }) {
     if (!form.name.trim()) return;
     setSaving(true);
     setSaveError('');
+    const payload = {
+      name: form.name,
+      pga_tournament_id: form.pga_tournament_id || null,
+      budget: form.budget,
+      draft_open: form.draft_open,
+      is_locked: form.is_locked,
+    };
     const { error } = modal === 'create'
-      ? await createTournament({ ...form, created_by: currentUserId })
-      : await updateTournament(modal.id, form);
-    if (error) {
-      setSaveError(error.message);
-      setSaving(false);
-      return;
-    }
+      ? await createTournament({ ...payload, created_by: currentUserId })
+      : await updateTournament(modal.id, payload);
+    if (error) { setSaveError(error.message); setSaving(false); return; }
     setModal(null);
     await load();
     setSaving(false);
@@ -70,7 +452,7 @@ function TournamentsTab({ currentUserId }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-white/40">Create and manage fantasy tournaments. Each tournament uses the global player list.</p>
+        <p className="text-xs text-white/40">Create and manage fantasy leagues. Each league links to a PGA event for shared scores.</p>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2 text-sm">
           <Plus size={14} /> New Tournament
         </button>
@@ -89,34 +471,11 @@ function TournamentsTab({ currentUserId }) {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="font-display font-semibold text-masters-cream">{t.name}</span>
-                    {t.current_round > 0 && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-masters-gold/20 text-masters-gold border border-masters-gold/30">
-                        R{t.current_round}
-                      </span>
-                    )}
                   </div>
                   <div className="text-xs text-white/40">
-                    {[t.course, t.year, `£${t.budget} budget`].filter(Boolean).join(' · ')}
+                    {[t.pga_tournaments?.name, `£${t.budget} budget`].filter(Boolean).join(' · ')}
                   </div>
-
-                  {/* Quick controls */}
                   <div className="flex items-center gap-3 mt-3 flex-wrap">
-                    <div>
-                      <label className="text-xs text-white/30 block mb-1">Round</label>
-                      <div className="flex gap-1">
-                        {[0,1,2,3,4].map(r => (
-                          <button key={r} onClick={() => quickUpdate(t, { current_round: r })}
-                            className={`w-8 h-7 rounded text-xs font-medium transition-colors ${
-                              t.current_round === r
-                                ? 'bg-masters-gold/20 text-masters-gold border border-masters-gold/40'
-                                : 'border border-white/10 text-white/40 hover:text-white/70'
-                            }`}>
-                            {r === 0 ? 'P' : r}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
                     <button onClick={() => quickUpdate(t, { is_locked: !t.is_locked })}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                         t.is_locked
@@ -126,7 +485,6 @@ function TournamentsTab({ currentUserId }) {
                       {t.is_locked ? <Lock size={11} /> : <Unlock size={11} />}
                       {t.is_locked ? 'Locked' : 'Open'}
                     </button>
-
                     <button onClick={() => quickUpdate(t, { draft_open: !t.draft_open })}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                         t.draft_open
@@ -137,7 +495,6 @@ function TournamentsTab({ currentUserId }) {
                     </button>
                   </div>
                 </div>
-
                 <div className="flex gap-2 shrink-0">
                   <button onClick={() => openEdit(t)}
                     className="p-2 rounded-lg text-white/30 hover:text-masters-gold hover:bg-masters-gold/10 transition-colors">
@@ -164,21 +521,18 @@ function TournamentsTab({ currentUserId }) {
             </h3>
             <div className="space-y-4">
               <div>
-                <label className="label">Tournament Name *</label>
+                <label className="label">League Name *</label>
                 <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  className="input" placeholder="e.g. The Masters 2025" />
+                  className="input" placeholder="e.g. The Lads Masters 2026" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Course</label>
-                  <input value={form.course} onChange={e => setForm(f => ({ ...f, course: e.target.value }))}
-                    className="input" placeholder="e.g. Augusta National" />
-                </div>
-                <div>
-                  <label className="label">Year</label>
-                  <input type="number" value={form.year} onChange={e => setForm(f => ({ ...f, year: e.target.value }))}
-                    className="input" />
-                </div>
+              <div>
+                <label className="label">PGA Event</label>
+                <select value={form.pga_tournament_id}
+                  onChange={e => setForm(f => ({ ...f, pga_tournament_id: e.target.value }))}
+                  className="input appearance-none">
+                  <option value="">None (standalone)</option>
+                  {pgaEvents.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
               </div>
               <div>
                 <label className="label">Budget per team (£)</label>
@@ -220,11 +574,10 @@ function TournamentsTab({ currentUserId }) {
           <div className="card max-w-sm w-full" onClick={e => e.stopPropagation()}>
             <h3 className="font-display font-bold text-masters-cream mb-2">Delete Tournament?</h3>
             <p className="text-white/40 text-sm mb-5">
-              This will permanently delete <strong className="text-white/70">{deleteConfirm.name}</strong> and all its rosters and scores. This cannot be undone.
+              This will permanently delete <strong className="text-white/70">{deleteConfirm.name}</strong> and all its rosters. This cannot be undone.
             </p>
             <div className="flex gap-3">
-              <button onClick={() => handleDelete(deleteConfirm)}
-                className="btn-danger flex-1">Delete</button>
+              <button onClick={() => handleDelete(deleteConfirm)} className="btn-danger flex-1">Delete</button>
               <button onClick={() => setDeleteConfirm(null)} className="btn-secondary flex-1">Cancel</button>
             </div>
           </div>
@@ -234,10 +587,159 @@ function TournamentsTab({ currentUserId }) {
   );
 }
 
+// ─── Field Pricing Tab ────────────────────────────────────────────────────────
+function FieldPricingTab() {
+  const [tournaments, setTournaments] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [players, setPlayers] = useState([]);
+  const [priceMap, setPriceMap] = useState({}); // player_id → { price, odds_fractional, world_ranking }
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    getTournaments().then(({ data }) => setTournaments(data || []));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    getTournamentPlayers(selectedId).then(({ data }) => {
+      setPlayers(data || []);
+      const map = {};
+      (data || []).forEach(p => {
+        map[p.id] = {
+          price: p.price ?? '',
+          odds_fractional: p.odds_fractional ?? '',
+          world_ranking: p.world_ranking ?? '',
+        };
+      });
+      setPriceMap(map);
+    });
+  }, [selectedId]);
+
+  function updateField(playerId, key, value) {
+    setPriceMap(m => ({ ...m, [playerId]: { ...m[playerId], [key]: value } }));
+  }
+
+  function autoPrice(player) {
+    const wr = priceMap[player.id]?.world_ranking || player.world_ranking;
+    if (!wr) return;
+    const price = Math.round(Math.max(4, 20 - (wr - 1) * 0.12) * 2) / 2;
+    updateField(player.id, 'price', price);
+  }
+
+  function autoPriceAll() {
+    setPriceMap(m => {
+      const next = { ...m };
+      players.forEach(player => {
+        const wr = next[player.id]?.world_ranking || player.world_ranking;
+        if (wr) {
+          next[player.id] = { ...next[player.id], price: Math.round(Math.max(4, 20 - (wr - 1) * 0.12) * 2) / 2 };
+        }
+      });
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    if (!selectedId) return;
+    setSaving(true);
+    const entries = players.map(p => ({
+      player_id: p.id,
+      price: priceMap[p.id]?.price !== '' ? parseFloat(priceMap[p.id]?.price) : null,
+      odds_fractional: priceMap[p.id]?.odds_fractional || null,
+      world_ranking: priceMap[p.id]?.world_ranking !== '' ? parseInt(priceMap[p.id]?.world_ranking) : null,
+    }));
+    await upsertTournamentPlayers(selectedId, entries);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  const filtered = players.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    (p.country || '').toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-3 flex-wrap items-end">
+        <div className="flex-1 min-w-48">
+          <label className="label">Fantasy Tournament</label>
+          <select value={selectedId} onChange={e => { setSelectedId(e.target.value); setSearch(''); }} className="input appearance-none">
+            <option value="">Select tournament…</option>
+            {tournaments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+        {selectedId && (
+          <>
+            <button onClick={autoPriceAll} className="btn-secondary text-sm flex items-center gap-1.5">
+              <RefreshCw size={13} /> Auto-price all
+            </button>
+            <button onClick={handleSave} disabled={saving} className="btn-primary text-sm flex items-center gap-1.5">
+              {saving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+              {saved ? 'Saved ✓' : 'Save Prices'}
+            </button>
+          </>
+        )}
+      </div>
+
+      {selectedId && players.length === 0 && (
+        <div className="card-dark text-center py-8 text-white/30 text-sm">
+          No players in field yet. Add players to the PGA event's field in the PGA Events tab first.
+        </div>
+      )}
+
+      {selectedId && players.length > 0 && (
+        <>
+          <div className="flex items-center gap-3 flex-wrap">
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              className="input flex-1 min-w-48" placeholder="Search players…" />
+            <span className="text-xs text-white/40">{players.length} players in field</span>
+          </div>
+
+          <div className="space-y-1.5">
+            {filtered.map(player => {
+              const entry = priceMap[player.id] || {};
+              return (
+                <div key={player.id} className="rounded-xl border border-masters-gold/20 bg-masters-gold/5 p-3">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium text-masters-cream text-sm truncate block">{player.name}</span>
+                      <span className="text-xs text-white/30">#{entry.world_ranking || player.world_ranking} · {player.country}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-white/30">£</span>
+                        <input type="number" step="0.5" min="1" value={entry.price ?? ''}
+                          onChange={e => updateField(player.id, 'price', e.target.value)}
+                          className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-masters-cream text-center focus:outline-none focus:border-masters-gold/40"
+                          placeholder="price" />
+                      </div>
+                      <input type="text" value={entry.odds_fractional ?? ''}
+                        onChange={e => updateField(player.id, 'odds_fractional', e.target.value)}
+                        className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-masters-cream text-center focus:outline-none focus:border-masters-gold/40"
+                        placeholder="12/1" />
+                      <button onClick={() => autoPrice(player)}
+                        className="text-xs text-white/30 hover:text-masters-gold transition-colors px-1">
+                        auto
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Scores Tab ───────────────────────────────────────────────────────────────
 function ScoresTab() {
-  const [tournaments, setTournaments] = useState([]);
-  const [selectedTournamentId, setSelectedTournamentId] = useState('');
+  const [pgaTournaments, setPgaTournaments] = useState([]);
+  const [selectedPgaId, setSelectedPgaId] = useState('');
   const [players, setPlayers] = useState([]);
   const [pars, setPars] = useState([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
@@ -247,28 +749,32 @@ function ScoresTab() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    getTournaments().then(({ data }) => setTournaments(data || []));
+    getPgaTournaments().then(({ data }) => setPgaTournaments(data || []));
     getPlayers().then(({ data }) => setPlayers(data || []));
-    getHolePars().then(({ data }) => setPars(data || []));
   }, []);
 
   useEffect(() => {
-    if (!selectedPlayer || !selectedTournamentId) return;
-    getAllScores(selectedTournamentId, selectedRound).then(({ data }) => {
+    if (!selectedPgaId) return;
+    getPgaHolePars(selectedPgaId).then(({ data }) => setPars(data || []));
+  }, [selectedPgaId]);
+
+  useEffect(() => {
+    if (!selectedPlayer || !selectedPgaId) return;
+    getAllScores(selectedPgaId, selectedRound).then(({ data }) => {
       const playerScores = (data || []).filter(s => s.player_id === selectedPlayer);
       const map = {};
       playerScores.forEach(s => { map[s.hole] = s.strokes; });
       setHoleScores(map);
     });
-  }, [selectedPlayer, selectedRound, selectedTournamentId]);
+  }, [selectedPlayer, selectedRound, selectedPgaId]);
 
   async function handleSave() {
-    if (!selectedPlayer || !selectedTournamentId) return;
+    if (!selectedPlayer || !selectedPgaId) return;
     setSaving(true);
     for (const par of pars) {
       const strokes = holeScores[par.hole];
       if (strokes !== undefined && strokes !== '') {
-        await upsertScore(selectedPlayer, selectedTournamentId, selectedRound, par.hole, parseInt(strokes), par.par);
+        await upsertScore(selectedPlayer, selectedPgaId, selectedRound, par.hole, parseInt(strokes), par.par);
       }
     }
     setSaving(false);
@@ -285,17 +791,17 @@ function ScoresTab() {
 
         <div className="flex gap-3 mb-6 flex-wrap">
           <div className="flex-1 min-w-40">
-            <label className="label">Tournament</label>
-            <select value={selectedTournamentId} onChange={e => { setSelectedTournamentId(e.target.value); setSelectedPlayer(''); }}
+            <label className="label">PGA Event</label>
+            <select value={selectedPgaId} onChange={e => { setSelectedPgaId(e.target.value); setSelectedPlayer(''); }}
               className="input appearance-none">
-              <option value="">Select tournament…</option>
-              {tournaments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              <option value="">Select PGA event…</option>
+              {pgaTournaments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
           <div className="flex-1 min-w-40">
             <label className="label">Player</label>
             <select value={selectedPlayer} onChange={e => setSelectedPlayer(e.target.value)}
-              className="input appearance-none" disabled={!selectedTournamentId}>
+              className="input appearance-none" disabled={!selectedPgaId}>
               <option value="">Select player…</option>
               {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
@@ -303,7 +809,7 @@ function ScoresTab() {
           <div>
             <label className="label">Round</label>
             <div className="flex gap-2">
-              {[1,2,3,4].map(r => (
+              {[1, 2, 3, 4].map(r => (
                 <button key={r} onClick={() => setSelectedRound(r)}
                   className={`px-4 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
                     selectedRound === r
@@ -315,10 +821,16 @@ function ScoresTab() {
           </div>
         </div>
 
-        {selectedPlayer && selectedTournamentId && (
+        {pars.length === 0 && selectedPgaId && (
+          <p className="text-xs text-yellow-400/70 mb-4">
+            No hole pars configured for this event. Set them in the PGA Events tab first.
+          </p>
+        )}
+
+        {selectedPlayer && selectedPgaId && pars.length > 0 && (
           <>
             <div className="text-sm text-white/50 mb-4">
-              <span className="text-masters-cream font-medium">{playerObj?.name}</span> · Round {selectedRound} · Par 72
+              <span className="text-masters-cream font-medium">{playerObj?.name}</span> · Round {selectedRound}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-5">
               {pars.map(p => {
@@ -351,7 +863,7 @@ function ScoresTab() {
                 {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save Scores'}
               </button>
               <span className="text-xs text-white/30">
-                {Object.values(holeScores).filter(v => v !== '').length} of 18 holes entered
+                {Object.values(holeScores).filter(v => v !== '').length} of {pars.length} holes entered
               </span>
             </div>
           </>
@@ -443,7 +955,7 @@ function PlayersTab() {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <p className="text-xs text-white/40">Global player list — update odds and prices before each event.</p>
+        <p className="text-xs text-white/40">Global player list — update odds and rankings before each event.</p>
         <div className="flex gap-2">
           <button onClick={() => setCutMode(!cutMode)}
             className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border transition-colors ${
@@ -464,9 +976,7 @@ function PlayersTab() {
           <div className="flex items-start justify-between gap-4 mb-4">
             <div>
               <p className="text-sm text-masters-cream font-medium">Cut Management</p>
-              <p className="text-xs text-white/40 mt-0.5">
-                Click a player to toggle. Green = survived cut, red = missed cut.
-              </p>
+              <p className="text-xs text-white/40 mt-0.5">Click a player to toggle. Green = survived cut, red = missed cut.</p>
             </div>
             <button onClick={handleMarkAllCut} disabled={saving}
               className="btn-danger text-xs shrink-0 flex items-center gap-1.5">
@@ -490,332 +1000,146 @@ function PlayersTab() {
         </div>
       ) : (
         <>
-
-      {players.map(player => (
-        <div key={player.id} className={`card-dark ${!player.is_active ? 'opacity-50' : ''}`}>
-          {editing === player.id ? (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-display font-semibold text-masters-cream">{player.name}</span>
-                <div className="flex gap-2">
-                  <button onClick={() => saveEdit(player)} disabled={saving} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
-                    <Save size={12} /> Save
-                  </button>
-                  <button onClick={() => setEditing(null)} className="btn-secondary text-xs px-3 py-1.5"><X size={12} /></button>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {players.map(player => (
+            <div key={player.id} className={`card-dark ${!player.is_active ? 'opacity-50' : ''}`}>
+              {editing === player.id ? (
                 <div>
-                  <label className="label">Base Price</label>
-                  <input type="number" step="0.5" value={editForm.price}
-                    onChange={e => setEditForm(f => ({ ...f, price: e.target.value }))}
-                    className="input" />
-                </div>
-                <div>
-                  <label className="label">Price Override</label>
-                  <input type="number" step="0.5" value={editForm.price_override}
-                    onChange={e => setEditForm(f => ({ ...f, price_override: e.target.value }))}
-                    className="input" placeholder="blank = use base" />
-                </div>
-                <div>
-                  <label className="label">Form (0-10)</label>
-                  <input type="number" step="0.1" min="0" max="10" value={editForm.form_score}
-                    onChange={e => setEditForm(f => ({ ...f, form_score: e.target.value }))}
-                    className="input" />
-                </div>
-                <div>
-                  <label className="label">World Ranking</label>
-                  <input type="number" value={editForm.world_ranking}
-                    onChange={e => setEditForm(f => ({ ...f, world_ranking: e.target.value }))}
-                    className="input" />
-                </div>
-                <div>
-                  <label className="label">Odds</label>
-                  <input type="text" value={editForm.odds_fractional}
-                    onChange={e => setEditForm(f => ({ ...f, odds_fractional: e.target.value }))}
-                    className="input" placeholder="e.g. 12/1" />
-                </div>
-              </div>
-              <div className="flex gap-4 mt-3 flex-wrap">
-                <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
-                  <input type="checkbox" checked={editForm.is_active}
-                    onChange={e => setEditForm(f => ({ ...f, is_active: e.target.checked }))} />
-                  Active (in field)
-                </label>
-                <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
-                  <input type="checkbox" checked={editForm.is_withdrawn}
-                    onChange={e => setEditForm(f => ({ ...f, is_withdrawn: e.target.checked }))} />
-                  Withdrawn (WD)
-                </label>
-                <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
-                  <input type="checkbox" checked={!editForm.made_cut}
-                    onChange={e => setEditForm(f => ({ ...f, made_cut: !e.target.checked }))} />
-                  Missed Cut
-                </label>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-masters-cream text-sm">{player.name}</span>
-                  {!player.is_active && <span className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-white/40">Inactive</span>}
-                  {player.is_withdrawn && <span className="badge-wd">WD</span>}
-                  {!player.made_cut && <span className="badge-cut">CUT</span>}
-                </div>
-                <div className="text-xs text-white/30 mt-0.5">
-                  #{player.world_ranking} · {player.odds_fractional} · Form: {player.form_score}
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <div className="font-mono text-sm text-masters-gold">
-                    £{(player.price_override ?? player.price)?.toFixed(1)}
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="font-display font-semibold text-masters-cream">{player.name}</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => saveEdit(player)} disabled={saving} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
+                        <Save size={12} /> Save
+                      </button>
+                      <button onClick={() => setEditing(null)} className="btn-secondary text-xs px-3 py-1.5"><X size={12} /></button>
+                    </div>
                   </div>
-                  {player.price_override && (
-                    <div className="text-xs text-white/30 line-through">£{player.price?.toFixed(1)}</div>
-                  )}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="label">Base Price</label>
+                      <input type="number" step="0.5" value={editForm.price}
+                        onChange={e => setEditForm(f => ({ ...f, price: e.target.value }))} className="input" />
+                    </div>
+                    <div>
+                      <label className="label">Price Override</label>
+                      <input type="number" step="0.5" value={editForm.price_override}
+                        onChange={e => setEditForm(f => ({ ...f, price_override: e.target.value }))}
+                        className="input" placeholder="blank = use base" />
+                    </div>
+                    <div>
+                      <label className="label">Form (0-10)</label>
+                      <input type="number" step="0.1" min="0" max="10" value={editForm.form_score}
+                        onChange={e => setEditForm(f => ({ ...f, form_score: e.target.value }))} className="input" />
+                    </div>
+                    <div>
+                      <label className="label">World Ranking</label>
+                      <input type="number" value={editForm.world_ranking}
+                        onChange={e => setEditForm(f => ({ ...f, world_ranking: e.target.value }))} className="input" />
+                    </div>
+                    <div>
+                      <label className="label">Odds</label>
+                      <input type="text" value={editForm.odds_fractional}
+                        onChange={e => setEditForm(f => ({ ...f, odds_fractional: e.target.value }))}
+                        className="input" placeholder="e.g. 12/1" />
+                    </div>
+                  </div>
+                  <div className="flex gap-4 mt-3 flex-wrap">
+                    <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
+                      <input type="checkbox" checked={editForm.is_active}
+                        onChange={e => setEditForm(f => ({ ...f, is_active: e.target.checked }))} />
+                      Active
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
+                      <input type="checkbox" checked={editForm.is_withdrawn}
+                        onChange={e => setEditForm(f => ({ ...f, is_withdrawn: e.target.checked }))} />
+                      Withdrawn (WD)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
+                      <input type="checkbox" checked={!editForm.made_cut}
+                        onChange={e => setEditForm(f => ({ ...f, made_cut: !e.target.checked }))} />
+                      Missed Cut
+                    </label>
+                  </div>
                 </div>
-                <button onClick={() => startEdit(player)}
-                  className="p-2 rounded-lg text-white/30 hover:text-masters-gold hover:bg-masters-gold/10 transition-colors">
-                  <Edit3 size={14} />
-                </button>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-masters-cream text-sm">{player.name}</span>
+                      {!player.is_active && <span className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-white/40">Inactive</span>}
+                      {player.is_withdrawn && <span className="badge-wd">WD</span>}
+                      {!player.made_cut && <span className="badge-cut">CUT</span>}
+                    </div>
+                    <div className="text-xs text-white/30 mt-0.5">
+                      #{player.world_ranking} · {player.odds_fractional} · Form: {player.form_score}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <div className="font-mono text-sm text-masters-gold">
+                        £{(player.price_override ?? player.price)?.toFixed(1)}
+                      </div>
+                      {player.price_override && (
+                        <div className="text-xs text-white/30 line-through">£{player.price?.toFixed(1)}</div>
+                      )}
+                    </div>
+                    <button onClick={() => startEdit(player)}
+                      className="p-2 rounded-lg text-white/30 hover:text-masters-gold hover:bg-masters-gold/10 transition-colors">
+                      <Edit3 size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Add player modal */}
+          {addModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+              onClick={() => setAddModal(false)}>
+              <div className="card max-w-md w-full" onClick={e => e.stopPropagation()}>
+                <h3 className="font-display font-bold text-masters-cream mb-5">Add Player</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="label">Name *</label>
+                    <input value={newForm.name} onChange={e => setNewForm(f => ({ ...f, name: e.target.value }))}
+                      className="input" placeholder="Full name" />
+                  </div>
+                  <div>
+                    <label className="label">Country</label>
+                    <input value={newForm.country} onChange={e => setNewForm(f => ({ ...f, country: e.target.value }))}
+                      className="input" placeholder="e.g. USA" />
+                  </div>
+                  <div>
+                    <label className="label">World Ranking</label>
+                    <input type="number" value={newForm.world_ranking}
+                      onChange={e => setNewForm(f => ({ ...f, world_ranking: e.target.value }))} className="input" />
+                  </div>
+                  <div>
+                    <label className="label">Odds (e.g. 12/1)</label>
+                    <input value={newForm.odds_fractional}
+                      onChange={e => setNewForm(f => ({ ...f, odds_fractional: e.target.value }))} className="input" />
+                  </div>
+                  <div>
+                    <label className="label">Price (£)</label>
+                    <input type="number" step="0.5" value={newForm.price}
+                      onChange={e => setNewForm(f => ({ ...f, price: e.target.value }))} className="input" />
+                  </div>
+                  <div>
+                    <label className="label">Form (0-10)</label>
+                    <input type="number" step="0.1" min="0" max="10" value={newForm.form_score}
+                      onChange={e => setNewForm(f => ({ ...f, form_score: e.target.value }))} className="input" />
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-5">
+                  <button onClick={handleAdd} disabled={saving || !newForm.name.trim()} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                    {saving ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+                    Add Player
+                  </button>
+                  <button onClick={() => setAddModal(false)} className="btn-secondary flex-1">Cancel</button>
+                </div>
               </div>
             </div>
           )}
-        </div>
-      ))}
-
-      {/* Add player modal */}
-      {addModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
-          onClick={() => setAddModal(false)}>
-          <div className="card max-w-md w-full" onClick={e => e.stopPropagation()}>
-            <h3 className="font-display font-bold text-masters-cream mb-5">Add Player</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="label">Name *</label>
-                <input value={newForm.name} onChange={e => setNewForm(f => ({ ...f, name: e.target.value }))}
-                  className="input" placeholder="Full name" />
-              </div>
-              <div>
-                <label className="label">Country</label>
-                <input value={newForm.country} onChange={e => setNewForm(f => ({ ...f, country: e.target.value }))}
-                  className="input" placeholder="e.g. USA" />
-              </div>
-              <div>
-                <label className="label">World Ranking</label>
-                <input type="number" value={newForm.world_ranking}
-                  onChange={e => setNewForm(f => ({ ...f, world_ranking: e.target.value }))}
-                  className="input" />
-              </div>
-              <div>
-                <label className="label">Odds (e.g. 12/1)</label>
-                <input value={newForm.odds_fractional}
-                  onChange={e => setNewForm(f => ({ ...f, odds_fractional: e.target.value }))}
-                  className="input" />
-              </div>
-              <div>
-                <label className="label">Price (£)</label>
-                <input type="number" step="0.5" value={newForm.price}
-                  onChange={e => setNewForm(f => ({ ...f, price: e.target.value }))}
-                  className="input" />
-              </div>
-              <div>
-                <label className="label">Form (0-10)</label>
-                <input type="number" step="0.1" min="0" max="10" value={newForm.form_score}
-                  onChange={e => setNewForm(f => ({ ...f, form_score: e.target.value }))}
-                  className="input" />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-5">
-              <button onClick={handleAdd} disabled={saving || !newForm.name.trim()} className="btn-primary flex-1 flex items-center justify-center gap-2">
-                {saving ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-                Add Player
-              </button>
-              <button onClick={() => setAddModal(false)} className="btn-secondary flex-1">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-      </>
-      )}
-    </div>
-  );
-}
-
-// ─── Field Setup Tab ─────────────────────────────────────────────────────────
-function FieldSetupTab() {
-  const [tournaments, setTournaments] = useState([]);
-  const [selectedId, setSelectedId] = useState('');
-  const [allPlayers, setAllPlayers] = useState([]);
-  const [fieldMap, setFieldMap] = useState({}); // player_id → { price, odds_fractional, world_ranking, is_in_field }
-  const [search, setSearch] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    getTournaments().then(({ data }) => setTournaments(data || []));
-    getAllPlayers().then(({ data }) => setAllPlayers(data || []));
-  }, []);
-
-  useEffect(() => {
-    if (!selectedId) return;
-    getTournamentField(selectedId).then(({ data }) => {
-      const map = {};
-      (data || []).forEach(tp => {
-        map[tp.player_id] = {
-          price: tp.price ?? '',
-          odds_fractional: tp.odds_fractional ?? '',
-          world_ranking: tp.world_ranking ?? tp.players?.world_ranking ?? '',
-          is_in_field: tp.is_in_field,
-        };
-      });
-      setFieldMap(map);
-    });
-  }, [selectedId]);
-
-  function toggleField(player) {
-    setFieldMap(m => {
-      const cur = m[player.id];
-      if (cur) {
-        return { ...m, [player.id]: { ...cur, is_in_field: !cur.is_in_field } };
-      }
-      return {
-        ...m,
-        [player.id]: {
-          price: '',
-          odds_fractional: '',
-          world_ranking: player.world_ranking ?? '',
-          is_in_field: true,
-        },
-      };
-    });
-  }
-
-  function updateField(playerId, key, value) {
-    setFieldMap(m => ({ ...m, [playerId]: { ...m[playerId], [key]: value } }));
-  }
-
-  function autoPrice(player) {
-    if (!player.world_ranking) return;
-    const price = Math.round(Math.max(4, 20 - (player.world_ranking - 1) * 0.12) * 2) / 2;
-    updateField(player.id, 'price', price);
-  }
-
-  function autoPriceAll() {
-    setFieldMap(m => {
-      const next = { ...m };
-      Object.keys(next).forEach(pid => {
-        if (!next[pid].is_in_field) return;
-        const player = allPlayers.find(p => p.id === pid);
-        if (player?.world_ranking) {
-          next[pid] = { ...next[pid], price: Math.round(Math.max(4, 20 - (player.world_ranking - 1) * 0.12) * 2) / 2 };
-        }
-      });
-      return next;
-    });
-  }
-
-  async function handleSave() {
-    if (!selectedId) return;
-    setSaving(true);
-    const entries = Object.entries(fieldMap)
-      .filter(([, v]) => v.is_in_field)
-      .map(([player_id, v]) => ({
-        player_id,
-        price: v.price !== '' ? parseFloat(v.price) : null,
-        odds_fractional: v.odds_fractional || null,
-        world_ranking: v.world_ranking !== '' ? parseInt(v.world_ranking) : null,
-        is_in_field: true,
-      }));
-    // Also upsert removed players as not-in-field
-    const removedEntries = Object.entries(fieldMap)
-      .filter(([, v]) => !v.is_in_field)
-      .map(([player_id]) => ({ player_id, is_in_field: false }));
-    await upsertTournamentPlayers(selectedId, [...entries, ...removedEntries]);
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
-
-  const inFieldIds = new Set(Object.entries(fieldMap).filter(([, v]) => v.is_in_field).map(([id]) => id));
-  const filtered = allPlayers.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    (p.country || '').toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="flex gap-3 flex-wrap items-end">
-        <div className="flex-1 min-w-48">
-          <label className="label">Tournament</label>
-          <select value={selectedId} onChange={e => setSelectedId(e.target.value)} className="input appearance-none">
-            <option value="">Select tournament…</option>
-            {tournaments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-        </div>
-        {selectedId && (
-          <>
-            <button onClick={autoPriceAll} className="btn-secondary text-sm flex items-center gap-1.5">
-              <RefreshCw size={13} /> Auto-price all
-            </button>
-            <button onClick={handleSave} disabled={saving} className="btn-primary text-sm flex items-center gap-1.5">
-              {saving ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
-              {saved ? 'Saved ✓' : 'Save Field'}
-            </button>
-          </>
-        )}
-      </div>
-
-      {selectedId && (
-        <>
-          <div className="flex items-center gap-3 flex-wrap">
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              className="input flex-1 min-w-48" placeholder="Search players…" />
-            <span className="text-xs text-white/40">{inFieldIds.size} in field</span>
-          </div>
-
-          <div className="space-y-1.5">
-            {filtered.map(player => {
-              const entry = fieldMap[player.id];
-              const inField = entry?.is_in_field ?? false;
-              return (
-                <div key={player.id} className={`rounded-xl border p-3 transition-all ${
-                  inField ? 'border-masters-gold/30 bg-masters-gold/5' : 'border-white/8 bg-white/2 opacity-60'
-                }`}>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
-                      <input type="checkbox" checked={inField} onChange={() => toggleField(player)}
-                        className="w-4 h-4 accent-masters-gold" />
-                      <span className="font-medium text-masters-cream text-sm truncate">{player.name}</span>
-                      <span className="text-xs text-white/30 shrink-0">#{entry?.world_ranking || player.world_ranking} · {player.country}</span>
-                    </label>
-
-                    {inField && (
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-white/30">£</span>
-                          <input type="number" step="0.5" min="1" value={entry?.price ?? ''}
-                            onChange={e => updateField(player.id, 'price', e.target.value)}
-                            className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-masters-cream text-center focus:outline-none focus:border-masters-gold/40"
-                            placeholder="price" />
-                        </div>
-                        <input type="text" value={entry?.odds_fractional ?? ''}
-                          onChange={e => updateField(player.id, 'odds_fractional', e.target.value)}
-                          className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-masters-cream text-center focus:outline-none focus:border-masters-gold/40"
-                          placeholder="12/1" />
-                        <button onClick={() => autoPrice(player)}
-                          className="text-xs text-white/30 hover:text-masters-gold transition-colors px-1">
-                          auto
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </>
       )}
     </div>
@@ -847,6 +1171,7 @@ function UsersTab() {
                 <span className="text-xs px-2 py-0.5 rounded-full bg-masters-gold/20 text-masters-gold border border-masters-gold/30">Admin</span>
               )}
             </div>
+            <div className="text-xs text-white/30 mt-0.5">{p.id}</div>
           </div>
           <button onClick={() => toggleAdmin(p)}
             className={p.is_admin ? 'btn-danger text-xs' : 'btn-secondary text-xs'}>
@@ -858,153 +1183,10 @@ function UsersTab() {
   );
 }
 
-// ─── Sync Config ──────────────────────────────────────────────────────────────
-function SyncTab() {
-  const [tournaments, setTournaments] = useState([]);
-  const [selectedId, setSelectedId] = useState('');
-  const [form, setForm] = useState({
-    sync_url: '', sync_format: 'masters',
-    sync_start_date: '', sync_end_date: '', sync_enabled: false,
-  });
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    getTournaments().then(({ data }) => {
-      setTournaments(data || []);
-      if (data?.length) setSelectedId(data[0].id);
-    });
-  }, []);
-
-  useEffect(() => {
-    const t = tournaments.find(t => t.id === selectedId);
-    if (!t) return;
-    setForm({
-      sync_url: t.sync_url || '',
-      sync_format: t.sync_format || 'masters',
-      sync_start_date: t.sync_start_date || '',
-      sync_end_date: t.sync_end_date || '',
-      sync_enabled: t.sync_enabled || false,
-    });
-  }, [selectedId, tournaments]);
-
-  async function handleSave() {
-    if (!selectedId) return;
-    setSaving(true);
-    await updateTournament(selectedId, {
-      sync_url: form.sync_url || null,
-      sync_format: form.sync_format,
-      sync_start_date: form.sync_start_date || null,
-      sync_end_date: form.sync_end_date || null,
-      sync_enabled: form.sync_enabled,
-    });
-    const { data } = await getTournaments();
-    setTournaments(data || []);
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
-
-  function getSyncStatus() {
-    if (!form.sync_enabled) return { label: 'Disabled', cls: 'bg-white/5 text-white/30 border-white/10' };
-    const today = new Date().toISOString().slice(0, 10);
-    if (form.sync_start_date && today < form.sync_start_date) {
-      const days = Math.ceil((new Date(form.sync_start_date) - new Date()) / 86400000);
-      return { label: `Starts in ${days}d`, cls: 'bg-yellow-900/30 text-yellow-300 border-yellow-800/40' };
-    }
-    if (form.sync_end_date && today > form.sync_end_date)
-      return { label: 'Ended', cls: 'bg-white/5 text-white/40 border-white/10' };
-    return { label: 'Active now', cls: 'bg-green-900/30 text-green-300 border-green-800/40' };
-  }
-
-  const status = getSyncStatus();
-
-  return (
-    <div className="space-y-4">
-      <div className="card-dark">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-display font-semibold text-masters-cream">Score Sync</h3>
-          <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${status.cls}`}>
-            {status.label}
-          </span>
-        </div>
-
-        <div className="mb-5">
-          <label className="label">Tournament</label>
-          <select value={selectedId} onChange={e => setSelectedId(e.target.value)}
-            className="input appearance-none w-full">
-            {tournaments.length === 0 && <option value="">No tournaments found</option>}
-            {tournaments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-        </div>
-
-        {selectedId && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3 cursor-pointer"
-              onClick={() => setForm(f => ({ ...f, sync_enabled: !f.sync_enabled }))}>
-              <div className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
-                form.sync_enabled ? 'bg-green-600' : 'bg-white/10'
-              }`}>
-                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                  form.sync_enabled ? 'translate-x-5' : 'translate-x-0.5'
-                }`} />
-              </div>
-              <span className="text-sm text-white/70 select-none">Enable automated score sync</span>
-            </div>
-
-            <div>
-              <label className="label">Score API URL</label>
-              <input type="url" value={form.sync_url}
-                onChange={e => setForm(f => ({ ...f, sync_url: e.target.value }))}
-                className="input w-full font-mono text-xs"
-                placeholder="https://www.masters.com/en_US/scores/feeds/2026/scores.json" />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="label">Format / Parser</label>
-                <select value={form.sync_format}
-                  onChange={e => setForm(f => ({ ...f, sync_format: e.target.value }))}
-                  className="input appearance-none w-full">
-                  <option value="masters">Masters (masters.com)</option>
-                  <option value="pga_tour">PGA Tour (coming soon)</option>
-                </select>
-              </div>
-              <div>
-                <label className="label">Start Date</label>
-                <input type="date" value={form.sync_start_date}
-                  onChange={e => setForm(f => ({ ...f, sync_start_date: e.target.value }))}
-                  className="input w-full" />
-              </div>
-              <div>
-                <label className="label">End Date</label>
-                <input type="date" value={form.sync_end_date}
-                  onChange={e => setForm(f => ({ ...f, sync_end_date: e.target.value }))}
-                  className="input w-full" />
-              </div>
-            </div>
-
-            <p className="text-xs text-white/30">
-              The GitHub Action runs every 15 minutes but only syncs when today is within the date
-              window and sync is enabled. Set end date to the last day of the tournament.
-            </p>
-
-            <button onClick={handleSave} disabled={saving || !selectedId}
-              className="btn-primary flex items-center gap-2">
-              {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-              {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save Sync Config'}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('Tournaments');
+  const [activeTab, setActiveTab] = useState('PGA Events');
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -1014,7 +1196,7 @@ export default function AdminPage() {
         </div>
         <div>
           <h1 className="font-display text-3xl font-bold text-masters-cream">Admin Panel</h1>
-          <p className="text-white/40 text-sm">Tournaments · Scores · Players · Users</p>
+          <p className="text-white/40 text-sm">PGA Events · Tournaments · Players · Users</p>
         </div>
       </div>
 
@@ -1032,12 +1214,12 @@ export default function AdminPage() {
       </div>
 
       <div className="animate-fade-up-delay-2">
-        {activeTab === 'Tournaments' && <TournamentsTab currentUserId={user?.id} />}
-        {activeTab === 'Field Setup' && <FieldSetupTab />}
-        {activeTab === 'Sync'        && <SyncTab />}
-        {activeTab === 'Scores'      && <ScoresTab />}
-        {activeTab === 'Players'     && <PlayersTab />}
-        {activeTab === 'Users'       && <UsersTab />}
+        {activeTab === 'PGA Events'    && <PgaEventsTab />}
+        {activeTab === 'Tournaments'   && <TournamentsTab currentUserId={user?.id} />}
+        {activeTab === 'Field Pricing' && <FieldPricingTab />}
+        {activeTab === 'Scores'        && <ScoresTab />}
+        {activeTab === 'Players'       && <PlayersTab />}
+        {activeTab === 'Users'         && <UsersTab />}
       </div>
     </div>
   );

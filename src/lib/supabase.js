@@ -41,17 +41,88 @@ export async function updateProfile(userId, updates) {
   return await supabase.from('profiles').update(updates).eq('id', userId).select().single();
 }
 
-// ─── Tournaments ──────────────────────────────────────────────────────────────
+// ─── PGA Tournaments (real golf events) ──────────────────────────────────────
 
-export async function getTournaments() {
+export async function getPgaTournaments() {
   return await supabase
-    .from('tournaments')
+    .from('pga_tournaments')
     .select('*')
     .order('created_at', { ascending: false });
 }
 
+export async function getPgaTournament(id) {
+  return await supabase.from('pga_tournaments').select('*').eq('id', id).single();
+}
+
+export async function createPgaTournament(data) {
+  return await supabase.from('pga_tournaments').insert(data).select().single();
+}
+
+export async function updatePgaTournament(id, updates) {
+  return await supabase.from('pga_tournaments').update(updates).eq('id', id).select().single();
+}
+
+export async function deletePgaTournament(id) {
+  return await supabase.from('pga_tournaments').delete().eq('id', id);
+}
+
+// ─── PGA Tournament Field (which players are in the PGA field) ────────────────
+
+export async function getPgaField(pgaTournamentId) {
+  return await supabase
+    .from('pga_tournament_players')
+    .select('*, players(id, name, country, world_ranking, owgr_id, is_withdrawn, made_cut)')
+    .eq('pga_tournament_id', pgaTournamentId)
+    .order('players(world_ranking)');
+}
+
+export async function upsertPgaField(pgaTournamentId, entries) {
+  // entries: [{ player_id, is_in_field }]
+  const rows = entries.map(e => ({ ...e, pga_tournament_id: pgaTournamentId }));
+  return await supabase
+    .from('pga_tournament_players')
+    .upsert(rows, { onConflict: 'pga_tournament_id,player_id' })
+    .select();
+}
+
+// ─── PGA Hole Pars ────────────────────────────────────────────────────────────
+
+export async function getPgaHolePars(pgaTournamentId) {
+  if (!pgaTournamentId) {
+    // Fallback to legacy global table during migration
+    return await supabase.from('hole_pars').select('hole, par, yards_championship as yards, name').order('hole');
+  }
+  return await supabase
+    .from('pga_hole_pars')
+    .select('hole, par, yards, name')
+    .eq('pga_tournament_id', pgaTournamentId)
+    .order('hole');
+}
+
+export async function upsertPgaHolePars(pgaTournamentId, pars) {
+  // pars: [{ hole, par, yards, name }]
+  const rows = pars.map(p => ({ ...p, pga_tournament_id: pgaTournamentId }));
+  return await supabase
+    .from('pga_hole_pars')
+    .upsert(rows, { onConflict: 'pga_tournament_id,hole' })
+    .select();
+}
+
+// ─── Fantasy Tournaments ──────────────────────────────────────────────────────
+
+export async function getTournaments() {
+  return await supabase
+    .from('tournaments')
+    .select('*, pga_tournaments(id, name, course, year)')
+    .order('created_at', { ascending: false });
+}
+
 export async function getTournament(id) {
-  return await supabase.from('tournaments').select('*').eq('id', id).single();
+  return await supabase
+    .from('tournaments')
+    .select('*, pga_tournaments(id, name, course, year)')
+    .eq('id', id)
+    .single();
 }
 
 export async function createTournament(data) {
@@ -85,7 +156,7 @@ export async function getUserMembership(tournamentId, userId) {
 export async function getUserMemberships(userId) {
   return await supabase
     .from('tournament_memberships')
-    .select('*, tournaments(*)')
+    .select('*, tournaments(*, pga_tournaments(name))')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 }
@@ -105,16 +176,47 @@ export async function getTournamentMembers(tournamentId) {
     .eq('tournament_id', tournamentId);
 }
 
-// ─── Tournament Players (per-tournament field + pricing) ──────────────────────
+// ─── Tournament Players (per-fantasy-tournament pricing) ─────────────────────
 
 export async function getTournamentPlayers(tournamentId) {
+  // Look up the linked PGA tournament for field membership
+  const { data: ft } = await supabase
+    .from('tournaments')
+    .select('pga_tournament_id')
+    .eq('id', tournamentId)
+    .single();
+
+  const pgaTournamentId = ft?.pga_tournament_id;
+
+  if (pgaTournamentId) {
+    // New architecture: field from pga_tournament_players, pricing from tournament_players
+    const [{ data: fieldData }, { data: pricingData }] = await Promise.all([
+      supabase
+        .from('pga_tournament_players')
+        .select('player_id, players(*)')
+        .eq('pga_tournament_id', pgaTournamentId)
+        .eq('is_in_field', true),
+      supabase
+        .from('tournament_players')
+        .select('player_id, price, odds_fractional, world_ranking')
+        .eq('tournament_id', tournamentId),
+    ]);
+    const priceMap = Object.fromEntries((pricingData || []).map(tp => [tp.player_id, tp]));
+    const data = (fieldData || []).map(fp => ({
+      ...fp.players,
+      price: priceMap[fp.player_id]?.price ?? null,
+      odds_fractional: priceMap[fp.player_id]?.odds_fractional ?? fp.players?.odds_fractional,
+      world_ranking: priceMap[fp.player_id]?.world_ranking ?? fp.players?.world_ranking,
+    }));
+    return { data, error: null };
+  }
+
+  // Fallback: old single-table approach (during migration, before PGA tournament is linked)
   const { data, error } = await supabase
     .from('tournament_players')
-    .select('price, odds_fractional, world_ranking, is_in_field, players(*)')
+    .select('price, odds_fractional, world_ranking, players(*)')
     .eq('tournament_id', tournamentId)
-    .eq('is_in_field', true)
     .order('world_ranking');
-  // Flatten: merge tournament-specific price/odds onto the player object
   const flattened = (data || []).map(tp => ({
     ...tp.players,
     price: tp.price ?? tp.players?.price,
@@ -125,7 +227,6 @@ export async function getTournamentPlayers(tournamentId) {
 }
 
 export async function getTournamentField(tournamentId) {
-  // Returns raw tournament_players rows (for admin field setup)
   return await supabase
     .from('tournament_players')
     .select('*, players(id, name, country, world_ranking, owgr_id)')
@@ -134,7 +235,7 @@ export async function getTournamentField(tournamentId) {
 }
 
 export async function upsertTournamentPlayers(tournamentId, entries) {
-  // entries: [{ player_id, price, odds_fractional, world_ranking, is_in_field }]
+  // entries: [{ player_id, price, odds_fractional, world_ranking }]
   const rows = entries.map(e => ({ ...e, tournament_id: tournamentId }));
   return await supabase
     .from('tournament_players')
@@ -153,11 +254,7 @@ export async function getTournamentPriceMap(tournamentId) {
 // ─── Players (global master list) ─────────────────────────────────────────────
 
 export async function getPlayers() {
-  return await supabase
-    .from('players')
-    .select('*')
-    .eq('is_active', true)
-    .order('world_ranking');
+  return await supabase.from('players').select('*').eq('is_active', true).order('world_ranking');
 }
 
 export async function getAllPlayers() {
@@ -177,10 +274,13 @@ export async function deletePlayer(playerId) {
 }
 
 export async function markAllPlayersMissedCut() {
-  return await supabase.from('players').update({ made_cut: false }).neq('id', '00000000-0000-0000-0000-000000000000');
+  return await supabase
+    .from('players')
+    .update({ made_cut: false })
+    .neq('id', '00000000-0000-0000-0000-000000000000');
 }
 
-// ─── Rosters (per user, per tournament) ───────────────────────────────────────
+// ─── Rosters ──────────────────────────────────────────────────────────────────
 
 export async function getUserRoster(userId, tournamentId) {
   return await supabase
@@ -226,42 +326,43 @@ export async function updateRosterEntry(userId, playerId, tournamentId, updates)
     .single();
 }
 
-// ─── Scores ───────────────────────────────────────────────────────────────────
+// ─── Scores (keyed by PGA tournament) ────────────────────────────────────────
 
-export async function getPlayerScores(playerId, tournamentId) {
-  return await supabase
-    .from('scores')
-    .select('*')
-    .eq('player_id', playerId)
-    .eq('tournament_id', tournamentId)
-    .order('round')
-    .order('hole');
-}
-
-export async function getAllScores(tournamentId, round) {
+export async function getAllScores(pgaTournamentId, round) {
   let query = supabase
     .from('scores')
     .select('*, players(name)')
-    .eq('tournament_id', tournamentId)
+    .eq('pga_tournament_id', pgaTournamentId)
     .order('round')
     .order('hole');
   if (round) query = query.eq('round', round);
   return await query;
 }
 
-export async function upsertScore(playerId, tournamentId, round, hole, strokes, par) {
+export async function getPlayerScores(playerId, pgaTournamentId) {
+  return await supabase
+    .from('scores')
+    .select('*')
+    .eq('player_id', playerId)
+    .eq('pga_tournament_id', pgaTournamentId)
+    .order('round')
+    .order('hole');
+}
+
+export async function upsertScore(playerId, pgaTournamentId, round, hole, strokes, par) {
   return await supabase
     .from('scores')
     .upsert(
-      { player_id: playerId, tournament_id: tournamentId, round, hole, strokes, par, updated_at: new Date().toISOString() },
-      { onConflict: 'tournament_id,player_id,round,hole' }
+      { player_id: playerId, pga_tournament_id: pgaTournamentId, round, hole, strokes, par, updated_at: new Date().toISOString() },
+      { onConflict: 'pga_tournament_id,player_id,round,hole' }
     )
     .select()
     .single();
 }
 
-export async function getHolePars() {
-  return await supabase.from('hole_pars').select('*').order('hole');
+// Legacy fallback: read from global hole_pars (pre-migration)
+export async function getHolePars(pgaTournamentId) {
+  return getPgaHolePars(pgaTournamentId ?? null);
 }
 
 // ─── Pricing formula ──────────────────────────────────────────────────────────

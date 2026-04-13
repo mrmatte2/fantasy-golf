@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTournament } from '../hooks/useTournament';
-import { getAllRosters, getAllScores, getTournamentMembers } from '../lib/supabase';
+import { getAllRosters, getAllScores, getTournament, getTournamentMembers } from '../lib/supabase';
 import { Trophy, Medal, Star } from 'lucide-react';
 
 function formatVsPar(vp) {
@@ -39,11 +39,14 @@ export default function LeaderboardPage() {
 
   async function loadLeaderboard() {
     setLoading(true);
-    const [{ data: members }, { data: rosters }, { data: scores }] = await Promise.all([
+    const [{ data: members }, { data: rosters }, { data: ft }] = await Promise.all([
       getTournamentMembers(tournamentId),
       getAllRosters(tournamentId),
-      getAllScores(tournamentId),
+      getTournament(tournamentId),
     ]);
+    // Resolve pga_tournament_id: scores belong to the PGA event, not the fantasy league
+    const pgaId = ft?.pga_tournament_id ?? tournamentId;
+    const { data: scores } = await getAllScores(pgaId);
 
     if (!members) { setLoading(false); return; }
 

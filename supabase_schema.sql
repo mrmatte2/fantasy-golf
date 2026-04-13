@@ -1,17 +1,16 @@
 -- ============================================================
--- FANTASY GOLF - MULTI-TOURNAMENT SCHEMA
--- Before running: in Supabase SQL Editor, first drop old tables
--- if you ran the previous schema:
+-- FANTASY GOLF - PGA / FANTASY TOURNAMENT ARCHITECTURE
+-- ============================================================
+-- Architecture:
+--   pga_tournaments      — real golf events (Masters, PGA Championship, etc.)
+--   pga_tournament_players — which players are in each PGA field
+--   pga_hole_pars        — hole pars per PGA event
+--   tournaments          — fantasy leagues (linked to a PGA event)
+--   tournament_players   — per-fantasy-tournament player pricing
+--   scores               — tied to pga_tournament_id (shared across fantasy leagues)
 --
--- drop table if exists public.scores cascade;
--- drop table if exists public.rosters cascade;
--- drop table if exists public.players cascade;
--- drop table if exists public.tournament_state cascade;
--- drop table if exists public.hole_pars cascade;
--- drop table if exists public.profiles cascade;
--- drop function if exists public.handle_new_user cascade;
---
--- Then paste and run this entire file.
+-- MIGRATION NOTES (run in Supabase SQL Editor in 3 steps):
+-- See the MIGRATION section at the bottom of this file.
 -- ============================================================
 
 create extension if not exists "uuid-ossp";
@@ -43,15 +42,52 @@ create trigger on_auth_user_created
   for each row execute procedure public.handle_new_user();
 
 -- ============================================================
--- TOURNAMENTS (one per real golf event, admin-created)
+-- PGA TOURNAMENTS (real golf events)
 -- ============================================================
-create table public.tournaments (
+create table public.pga_tournaments (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   course text,
   year integer,
+  sync_url text,
+  sync_format text default 'masters',
+  sync_start_date date,
+  sync_end_date date,
+  sync_enabled boolean default false,
+  created_at timestamptz default now()
+);
+
+-- ============================================================
+-- PGA TOURNAMENT PLAYERS (field membership per PGA event)
+-- ============================================================
+create table public.pga_tournament_players (
+  id uuid primary key default uuid_generate_v4(),
+  pga_tournament_id uuid references public.pga_tournaments(id) on delete cascade,
+  player_id uuid references public.players(id) on delete cascade,
+  is_in_field boolean default true,
+  unique(pga_tournament_id, player_id)
+);
+
+-- ============================================================
+-- PGA HOLE PARS (per PGA event)
+-- ============================================================
+create table public.pga_hole_pars (
+  pga_tournament_id uuid references public.pga_tournaments(id) on delete cascade,
+  hole integer check (hole between 1 and 18),
+  par integer,
+  yards integer,
+  name text,
+  primary key (pga_tournament_id, hole)
+);
+
+-- ============================================================
+-- FANTASY TOURNAMENTS (friend group leagues, linked to a PGA event)
+-- ============================================================
+create table public.tournaments (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  pga_tournament_id uuid references public.pga_tournaments(id),
   budget numeric(10,2) default 100.00,
-  current_round integer default 0 check (current_round between 0 and 4),
   is_locked boolean default false,
   draft_open boolean default true,
   created_by uuid references public.profiles(id),
@@ -60,7 +96,7 @@ create table public.tournaments (
 );
 
 -- ============================================================
--- TOURNAMENT MEMBERSHIPS (user joins a tournament with a team name)
+-- TOURNAMENT MEMBERSHIPS (user joins a fantasy tournament with a team name)
 -- ============================================================
 create table public.tournament_memberships (
   id uuid primary key default uuid_generate_v4(),
@@ -71,14 +107,6 @@ create table public.tournament_memberships (
   unique(tournament_id, user_id)
 );
 
--- Score sync config (added via migration — see migration note below)
--- alter table public.tournament_state
---   add column if not exists sync_url text,
---   add column if not exists sync_format text default 'masters',
---   add column if not exists sync_start_date date,
---   add column if not exists sync_end_date date,
---   add column if not exists sync_enabled boolean default false;
-
 -- ============================================================
 -- PLAYERS (global master list — identity sourced from OWGR)
 -- ============================================================
@@ -86,19 +114,23 @@ create table public.players (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   country text,
-  world_ranking integer,       -- refreshed from OWGR before each event
-  owgr_id text,                -- OWGR player ID (universal across all tournaments)
-  masters_id text,             -- Masters-specific ID for score sync (optional override)
+  world_ranking integer,
+  owgr_id text,
   form_score numeric(4,2),
   is_active boolean default true,
   is_withdrawn boolean default false,
   made_cut boolean default true,
   photo_url text,
+  price numeric(5,2),
+  price_override numeric(5,2),
+  odds_fractional text,
+  odds_decimal numeric(10,2),
   created_at timestamptz default now()
 );
 
 -- ============================================================
--- TOURNAMENT PLAYERS (per-tournament field + pricing)
+-- TOURNAMENT PLAYERS (per-fantasy-tournament pricing only)
+-- Field membership is in pga_tournament_players
 -- ============================================================
 create table public.tournament_players (
   id uuid primary key default uuid_generate_v4(),
@@ -106,13 +138,12 @@ create table public.tournament_players (
   player_id uuid references public.players(id) on delete cascade,
   price numeric(5,2),
   odds_fractional text,
-  world_ranking integer,       -- snapshot at time of tournament
-  is_in_field boolean default true,
+  world_ranking integer,
   unique(tournament_id, player_id)
 );
 
 -- ============================================================
--- ROSTERS (per user, per tournament)
+-- ROSTERS (per user, per fantasy tournament)
 -- ============================================================
 create table public.rosters (
   id uuid primary key default uuid_generate_v4(),
@@ -128,11 +159,11 @@ create table public.rosters (
 );
 
 -- ============================================================
--- SCORES (per player, per tournament, per round, per hole)
+-- SCORES (per player, per PGA event — shared across fantasy leagues)
 -- ============================================================
 create table public.scores (
   id uuid primary key default uuid_generate_v4(),
-  tournament_id uuid references public.tournaments(id) on delete cascade,
+  pga_tournament_id uuid references public.pga_tournaments(id) on delete cascade,
   player_id uuid references public.players(id) on delete cascade,
   round integer check (round between 1 and 4),
   hole integer check (hole between 1 and 18),
@@ -140,11 +171,11 @@ create table public.scores (
   par integer,
   vs_par integer generated always as (strokes - par) stored,
   updated_at timestamptz default now(),
-  unique(tournament_id, player_id, round, hole)
+  unique(pga_tournament_id, player_id, round, hole)
 );
 
 -- ============================================================
--- HOLE PARS (Augusta National — global reference)
+-- HOLE PARS (Augusta National — legacy global reference, kept for migration)
 -- ============================================================
 create table public.hole_pars (
   hole integer primary key,
@@ -177,19 +208,40 @@ insert into public.hole_pars (hole, par, yards_championship, name) values
 -- ROW LEVEL SECURITY
 -- ============================================================
 alter table public.profiles enable row level security;
+alter table public.pga_tournaments enable row level security;
+alter table public.pga_tournament_players enable row level security;
+alter table public.pga_hole_pars enable row level security;
 alter table public.tournaments enable row level security;
 alter table public.tournament_memberships enable row level security;
 alter table public.players enable row level security;
+alter table public.tournament_players enable row level security;
 alter table public.rosters enable row level security;
 alter table public.scores enable row level security;
-alter table public.tournament_players enable row level security;
 alter table public.hole_pars enable row level security;
 
 -- Profiles: everyone reads, own row update
 create policy "profiles_select" on public.profiles for select using (true);
 create policy "profiles_update_own" on public.profiles for update using (auth.uid() = id);
 
--- Tournaments: everyone reads, admin writes
+-- PGA Tournaments: everyone reads, admin writes
+create policy "pga_tournaments_select" on public.pga_tournaments for select using (true);
+create policy "pga_tournaments_admin_write" on public.pga_tournaments for all
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+
+-- PGA Tournament Players: everyone reads, admin writes
+create policy "pga_tournament_players_select" on public.pga_tournament_players for select using (true);
+create policy "pga_tournament_players_admin_write" on public.pga_tournament_players for all
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+
+-- PGA Hole Pars: everyone reads, admin writes
+create policy "pga_hole_pars_select" on public.pga_hole_pars for select using (true);
+create policy "pga_hole_pars_admin_write" on public.pga_hole_pars for all
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+
+-- Fantasy Tournaments: everyone reads, admin writes
 create policy "tournaments_select" on public.tournaments for select using (true);
 create policy "tournaments_admin_write" on public.tournaments for all
   using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
@@ -235,7 +287,7 @@ create policy "rosters_delete_own" on public.rosters for delete
     )
   );
 
--- Scores: everyone reads, admin writes
+-- Scores: everyone reads, admin writes (service key bypasses RLS for sync)
 create policy "scores_select" on public.scores for select using (true);
 create policy "scores_admin_write" on public.scores for all
   using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
@@ -245,37 +297,111 @@ create policy "scores_admin_write" on public.scores for all
 create policy "hole_pars_select" on public.hole_pars for select using (true);
 
 -- ============================================================
--- SAMPLE MASTERS 2025 PLAYERS (global master list)
--- Admin can edit prices, form scores, odds before each event
+-- MIGRATION — run these in Supabase SQL Editor in 3 steps
+-- (Only needed for existing deployments; fresh installs use schema above)
 -- ============================================================
-insert into public.players (name, country, world_ranking, odds_fractional, odds_decimal, form_score, price) values
-  ('Scottie Scheffler',   'USA', 1,   '9/2',   5.5,   9.2, 18.00),
-  ('Rory McIlroy',        'NIR', 2,   '8/1',   9.0,   8.5, 16.00),
-  ('Xander Schauffele',   'USA', 3,   '10/1',  11.0,  8.0, 14.50),
-  ('Collin Morikawa',     'USA', 4,   '12/1',  13.0,  7.8, 13.50),
-  ('Jon Rahm',            'ESP', 5,   '14/1',  15.0,  7.5, 13.00),
-  ('Ludvig Åberg',        'SWE', 6,   '16/1',  17.0,  8.3, 13.00),
-  ('Viktor Hovland',      'NOR', 7,   '18/1',  19.0,  7.0, 12.00),
-  ('Tommy Fleetwood',     'ENG', 8,   '20/1',  21.0,  7.2, 11.50),
-  ('Brooks Koepka',       'USA', 12,  '22/1',  23.0,  6.8, 11.00),
-  ('Bryson DeChambeau',   'USA', 10,  '20/1',  21.0,  7.0, 11.00),
-  ('Justin Thomas',       'USA', 15,  '28/1',  29.0,  6.5, 10.50),
-  ('Jordan Spieth',       'USA', 14,  '25/1',  26.0,  6.8, 10.50),
-  ('Patrick Cantlay',     'USA', 11,  '28/1',  29.0,  6.3, 10.00),
-  ('Shane Lowry',         'IRL', 16,  '33/1',  34.0,  6.5,  9.50),
-  ('Cameron Smith',       'AUS', 20,  '33/1',  34.0,  6.2,  9.00),
-  ('Max Homa',            'USA', 18,  '40/1',  41.0,  6.0,  8.50),
-  ('Tony Finau',          'USA', 22,  '50/1',  51.0,  5.8,  8.00),
-  ('Russell Henley',      'USA', 25,  '50/1',  51.0,  6.5,  8.00),
-  ('Adam Scott',          'AUS', 30,  '66/1',  67.0,  5.5,  7.50),
-  ('Hideki Matsuyama',    'JPN', 19,  '28/1',  29.0,  7.0, 10.00),
-  ('Will Zalatoris',      'USA', 28,  '66/1',  67.0,  5.2,  7.00),
-  ('Tyrrell Hatton',      'ENG', 17,  '33/1',  34.0,  6.0,  9.00),
-  ('Sepp Straka',         'AUT', 24,  '66/1',  67.0,  5.8,  7.50),
-  ('Sungjae Im',          'KOR', 26,  '80/1',  81.0,  5.5,  7.00),
-  ('Si Woo Kim',          'KOR', 35,  '100/1', 101.0, 5.0,  6.00),
-  ('Akshay Bhatia',       'USA', 32,  '80/1',  81.0,  6.2,  7.00),
-  ('Min Woo Lee',         'AUS', 29,  '80/1',  81.0,  5.8,  7.00),
-  ('Sahith Theegala',     'USA', 21,  '50/1',  51.0,  6.0,  8.00),
-  ('Harris English',      'USA', 40,  '150/1', 151.0, 4.8,  5.50),
-  ('Fred Couples',        'USA', 200, '300/1', 301.0, 4.0,  4.00);
+
+-- ── STEP 1: Create new tables ─────────────────────────────────────────────────
+/*
+create table public.pga_tournaments (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  course text,
+  year integer,
+  sync_url text,
+  sync_format text default 'masters',
+  sync_start_date date,
+  sync_end_date date,
+  sync_enabled boolean default false,
+  created_at timestamptz default now()
+);
+alter table public.pga_tournaments enable row level security;
+create policy "pga_tournaments_select" on public.pga_tournaments for select using (true);
+create policy "pga_tournaments_admin_write" on public.pga_tournaments for all
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+
+create table public.pga_tournament_players (
+  id uuid primary key default uuid_generate_v4(),
+  pga_tournament_id uuid references public.pga_tournaments(id) on delete cascade,
+  player_id uuid references public.players(id) on delete cascade,
+  is_in_field boolean default true,
+  unique(pga_tournament_id, player_id)
+);
+alter table public.pga_tournament_players enable row level security;
+create policy "pga_tournament_players_select" on public.pga_tournament_players for select using (true);
+create policy "pga_tournament_players_admin_write" on public.pga_tournament_players for all
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+
+create table public.pga_hole_pars (
+  pga_tournament_id uuid references public.pga_tournaments(id) on delete cascade,
+  hole integer check (hole between 1 and 18),
+  par integer,
+  yards integer,
+  name text,
+  primary key (pga_tournament_id, hole)
+);
+alter table public.pga_hole_pars enable row level security;
+create policy "pga_hole_pars_select" on public.pga_hole_pars for select using (true);
+create policy "pga_hole_pars_admin_write" on public.pga_hole_pars for all
+  using (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true))
+  with check (exists (select 1 from public.profiles where id = auth.uid() and is_admin = true));
+*/
+
+-- ── STEP 2: Modify existing tables ───────────────────────────────────────────
+/*
+-- Add pga_tournament_id to fantasy tournaments
+alter table public.tournaments
+  add column if not exists pga_tournament_id uuid references public.pga_tournaments(id);
+
+-- Add pga_tournament_id to scores (keep old tournament_id during migration)
+alter table public.scores
+  add column if not exists pga_tournament_id uuid references public.pga_tournaments(id) on delete cascade;
+
+-- Drop is_in_field from tournament_players (field membership is now in pga_tournament_players)
+alter table public.tournament_players drop column if exists is_in_field;
+*/
+
+-- ── STEP 3: Data migration ────────────────────────────────────────────────────
+-- Run AFTER creating the Masters 2026 PGA tournament via Admin → PGA Events
+-- and linking your existing fantasy tournaments to it via Admin → Tournaments.
+-- Replace <PGA_TOURNAMENT_ID> with the UUID from the pga_tournaments table.
+/*
+-- Re-link existing scores to the PGA tournament
+update public.scores s
+set pga_tournament_id = t.pga_tournament_id
+from public.tournaments t
+where s.tournament_id = t.id
+  and t.pga_tournament_id is not null;
+
+-- Migrate Augusta hole pars from global table to PGA tournament
+insert into public.pga_hole_pars (pga_tournament_id, hole, par, yards, name)
+select '<PGA_TOURNAMENT_ID>', hole, par, yards_championship, name
+from public.hole_pars;
+
+-- Migrate field membership from tournament_players to pga_tournament_players
+insert into public.pga_tournament_players (pga_tournament_id, player_id, is_in_field)
+select t.pga_tournament_id, tp.player_id, true
+from public.tournament_players tp
+join public.tournaments t on t.id = tp.tournament_id
+where t.pga_tournament_id is not null
+on conflict (pga_tournament_id, player_id) do nothing;
+
+-- Final cleanup: drop old tournament_id from scores + update unique constraint
+alter table public.scores drop column if exists tournament_id;
+alter table public.scores drop constraint if exists scores_tournament_id_player_id_round_hole_key;
+alter table public.scores add constraint scores_pga_player_round_hole_key
+  unique (pga_tournament_id, player_id, round, hole);
+
+-- Drop sync config columns from tournaments (now on pga_tournaments)
+alter table public.tournaments
+  drop column if exists sync_url,
+  drop column if exists sync_format,
+  drop column if exists sync_start_date,
+  drop column if exists sync_end_date,
+  drop column if exists sync_enabled,
+  drop column if exists current_round,
+  drop column if exists course,
+  drop column if exists year;
+*/

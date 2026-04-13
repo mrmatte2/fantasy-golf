@@ -44,7 +44,18 @@ function isWithinRange(start, end) {
 
 // ─── Shared DB helpers ────────────────────────────────────────────────────────
 
-async function loadHolePars() {
+async function loadHolePars(pgaTournamentId) {
+  // Prefer per-tournament pars, fall back to global hole_pars during migration
+  const { data: pgaPars } = await supabase
+    .from('pga_hole_pars')
+    .select('hole, par')
+    .eq('pga_tournament_id', pgaTournamentId)
+    .order('hole');
+  if (pgaPars?.length) {
+    const map = {};
+    for (const row of pgaPars) map[row.hole] = row.par;
+    return map;
+  }
   const { data, error } = await supabase.from('hole_pars').select('hole, par').order('hole');
   if (error) throw new Error(`Failed to load hole_pars: ${error.message}`);
   const map = {};
@@ -89,7 +100,7 @@ const PARSERS = {
    *   { fileEpoch, data: { player: [ { id, full_name, rounds: [ { scores: [strokes…] } ] } ] } }
    *   OR: { player: [...] }
    */
-  async masters(url, tournamentId) {
+  async masters(url, pgaTournamentId) {
     console.log(`Fetching: ${url}`);
 
     const resp = await fetch(url, {
@@ -109,7 +120,7 @@ const PARSERS = {
       return { playersMatched: 0, playersCreated: 0, scoresUpserted: 0 };
     }
 
-    const [dbPlayers, parMap] = await Promise.all([loadPlayers(), loadHolePars()]);
+    const [dbPlayers, parMap] = await Promise.all([loadPlayers(), loadHolePars(pgaTournamentId)]);
     const upserts = [];
     let matched = 0;
     let created = 0;
@@ -136,7 +147,7 @@ const PARSERS = {
           const hole = holeIdx + 1;
           if (hole > 18) return;
           upserts.push({
-            tournament_id: tournamentId,
+            pga_tournament_id: pgaTournamentId,
             player_id: playerId,
             round,
             hole,
@@ -159,7 +170,7 @@ const PARSERS = {
       const batch = upserts.slice(i, i + 200);
       const { error } = await supabase
         .from('scores')
-        .upsert(batch, { onConflict: 'tournament_id,player_id,round,hole' });
+        .upsert(batch, { onConflict: 'pga_tournament_id,player_id,round,hole' });
       if (error) throw new Error(`Upsert failed: ${error.message}`);
       totalUpserted += batch.length;
     }
@@ -176,19 +187,19 @@ const PARSERS = {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  // Load all tournaments that have sync enabled
+  // Load all PGA tournaments that have sync enabled
   const { data: tournaments, error: tourErr } = await supabase
-    .from('tournaments')
+    .from('pga_tournaments')
     .select('id, name, sync_url, sync_format, sync_start_date, sync_end_date, sync_enabled')
     .eq('sync_enabled', true);
 
   if (tourErr) {
-    console.error('Failed to load tournaments:', tourErr.message);
+    console.error('Failed to load pga_tournaments:', tourErr.message);
     process.exit(1);
   }
 
   if (!tournaments || !tournaments.length) {
-    console.log('No tournaments have sync enabled. Nothing to do.');
+    console.log('No PGA tournaments have sync enabled. Nothing to do.');
     process.exit(0);
   }
 
@@ -196,8 +207,8 @@ async function main() {
   const active = tournaments.filter(t => isWithinRange(t.sync_start_date, t.sync_end_date));
 
   console.log(`Today: ${todayUTC()}`);
-  console.log(`Tournaments with sync enabled : ${tournaments.length}`);
-  console.log(`Within date window            : ${active.length}`);
+  console.log(`PGA tournaments with sync enabled : ${tournaments.length}`);
+  console.log(`Within date window               : ${active.length}`);
 
   if (!active.length) {
     console.log('\nAll synced tournaments are outside their date window. Skipping.');
