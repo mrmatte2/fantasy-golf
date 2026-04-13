@@ -177,14 +177,16 @@ const PARSERS = {
         matched++;
       }
 
-      const rounds = mp.rounds || mp.round_scores || [];
-      rounds.forEach((roundData, roundIdx) => {
-        const round = roundIdx + 1;
-        const scores = roundData.scores || roundData || [];
-        scores.forEach((strokes, holeIdx) => {
-          if (!strokes || strokes === 0) return;
-          const hole = holeIdx + 1;
-          if (hole > 18) return;
+      // API uses round1/round2/round3/round4 as direct keys, each with a
+      // scores object keyed "0"–"17" (0-indexed hole numbers)
+      for (let roundIdx = 1; roundIdx <= 4; roundIdx++) {
+        const roundData = mp[`round${roundIdx}`];
+        if (!roundData?.scores) continue;
+        const round = roundIdx;
+        for (const [holeKey, strokes] of Object.entries(roundData.scores)) {
+          if (!strokes || strokes === 0) continue;
+          const hole = parseInt(holeKey) + 1; // convert 0-indexed to 1-indexed
+          if (hole > 18) continue;
           upserts.push({
             pga_tournament_id: pgaTournamentId,
             player_id: playerId,
@@ -194,8 +196,8 @@ const PARSERS = {
             par: parMap[hole] ?? 4,
             updated_at: new Date().toISOString(),
           });
-        });
-      });
+        }
+      }
     }
 
     if (!upserts.length) {
