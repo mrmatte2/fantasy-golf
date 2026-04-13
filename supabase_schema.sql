@@ -45,11 +45,25 @@ create table public.tournament_state (
   is_locked boolean default false,          -- roster locked flag
   draft_open boolean default true,          -- draft phase open
   tournament_name text default 'The Masters 2025',
+  -- Score sync config (GUI-configured, read by GitHub Actions sync script)
+  sync_url text,                            -- API endpoint to fetch scores from
+  sync_format text default 'masters',       -- parser to use: 'masters', 'pga_tour', etc.
+  sync_start_date date,                     -- first day to sync (inclusive)
+  sync_end_date date,                       -- last day to sync (inclusive)
+  sync_enabled boolean default false,       -- manual on/off switch
   updated_at timestamptz default now()
 );
 
 -- Insert the single state row
 insert into public.tournament_state (id) values (1);
+
+-- Score sync config (added via migration — see migration note below)
+-- alter table public.tournament_state
+--   add column if not exists sync_url text,
+--   add column if not exists sync_format text default 'masters',
+--   add column if not exists sync_start_date date,
+--   add column if not exists sync_end_date date,
+--   add column if not exists sync_enabled boolean default false;
 
 -- ============================================================
 -- PLAYERS

@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTournament } from '../../hooks/useTournament';
 import {
   updateTournamentState, getPlayers, updatePlayer, getAllProfiles, updateProfile,
-  upsertScore, getHolePars, getAllScores, getAllRosters
+  upsertScore, getHolePars, getAllScores, getAllRosters,
+  getTournaments, updateTournament,
 } from '../../lib/supabase';
 import { Settings, Lock, Unlock, Users, Trophy, Edit3, Save, X, RefreshCw, ChevronDown } from 'lucide-react';
 
-const TABS = ['Tournament', 'Scores', 'Players', 'Users'];
+const TABS = ['Tournament', 'Sync', 'Scores', 'Players', 'Users'];
 
 // ─── Tournament Control ───────────────────────────────────────────────────────
 function TournamentTab({ state, onRefresh }) {
@@ -90,6 +91,157 @@ function TournamentTab({ state, onRefresh }) {
         <div className="mt-4 text-xs text-white/30 border-t border-white/5 pt-4">
           Last updated: {new Date(state.updated_at).toLocaleString()}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Sync Config ──────────────────────────────────────────────────────────────
+function SyncTab() {
+  const [tournaments, setTournaments] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [form, setForm] = useState({
+    sync_url: '', sync_format: 'masters',
+    sync_start_date: '', sync_end_date: '', sync_enabled: false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    getTournaments().then(({ data }) => {
+      setTournaments(data || []);
+      if (data?.length) setSelectedId(data[0].id);
+    });
+  }, []);
+
+  useEffect(() => {
+    const t = tournaments.find(t => t.id === selectedId);
+    if (!t) return;
+    setForm({
+      sync_url: t.sync_url || '',
+      sync_format: t.sync_format || 'masters',
+      sync_start_date: t.sync_start_date || '',
+      sync_end_date: t.sync_end_date || '',
+      sync_enabled: t.sync_enabled || false,
+    });
+  }, [selectedId, tournaments]);
+
+  async function handleSave() {
+    if (!selectedId) return;
+    setSaving(true);
+    await updateTournament(selectedId, {
+      sync_url: form.sync_url || null,
+      sync_format: form.sync_format,
+      sync_start_date: form.sync_start_date || null,
+      sync_end_date: form.sync_end_date || null,
+      sync_enabled: form.sync_enabled,
+    });
+    // Refresh local list so status pill updates
+    const { data } = await getTournaments();
+    setTournaments(data || []);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  function getSyncStatus() {
+    if (!form.sync_enabled) return { label: 'Disabled', cls: 'bg-white/5 text-white/30 border-white/10' };
+    const today = new Date().toISOString().slice(0, 10);
+    if (form.sync_start_date && today < form.sync_start_date) {
+      const days = Math.ceil((new Date(form.sync_start_date) - new Date()) / 86400000);
+      return { label: `Starts in ${days}d`, cls: 'bg-yellow-900/30 text-yellow-300 border-yellow-800/40' };
+    }
+    if (form.sync_end_date && today > form.sync_end_date)
+      return { label: 'Ended', cls: 'bg-white/5 text-white/40 border-white/10' };
+    return { label: 'Active now', cls: 'bg-green-900/30 text-green-300 border-green-800/40' };
+  }
+
+  const status = getSyncStatus();
+
+  return (
+    <div className="space-y-4">
+      <div className="card-dark">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-display font-semibold text-masters-cream">Score Sync</h3>
+          <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${status.cls}`}>
+            {status.label}
+          </span>
+        </div>
+
+        {/* Tournament selector */}
+        <div className="mb-5">
+          <label className="label">Tournament</label>
+          <select value={selectedId} onChange={e => setSelectedId(e.target.value)}
+            className="input appearance-none w-full">
+            {tournaments.length === 0 && <option value="">No tournaments found</option>}
+            {tournaments.map(t => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {selectedId && (
+          <div className="space-y-4">
+            {/* Enable toggle */}
+            <div className="flex items-center gap-3 cursor-pointer"
+              onClick={() => setForm(f => ({ ...f, sync_enabled: !f.sync_enabled }))}>
+              <div className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
+                form.sync_enabled ? 'bg-green-600' : 'bg-white/10'
+              }`}>
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                  form.sync_enabled ? 'translate-x-5' : 'translate-x-0.5'
+                }`} />
+              </div>
+              <span className="text-sm text-white/70 select-none">Enable automated score sync</span>
+            </div>
+
+            {/* API URL */}
+            <div>
+              <label className="label">Score API URL</label>
+              <input type="url" value={form.sync_url}
+                onChange={e => setForm(f => ({ ...f, sync_url: e.target.value }))}
+                className="input w-full font-mono text-xs"
+                placeholder="https://www.masters.com/en_US/scores/feeds/2026/scores.json"
+              />
+            </div>
+
+            {/* Format + dates */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="label">Format / Parser</label>
+                <select value={form.sync_format}
+                  onChange={e => setForm(f => ({ ...f, sync_format: e.target.value }))}
+                  className="input appearance-none w-full">
+                  <option value="masters">Masters (masters.com)</option>
+                  <option value="pga_tour">PGA Tour (coming soon)</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Start Date</label>
+                <input type="date" value={form.sync_start_date}
+                  onChange={e => setForm(f => ({ ...f, sync_start_date: e.target.value }))}
+                  className="input w-full" />
+              </div>
+              <div>
+                <label className="label">End Date</label>
+                <input type="date" value={form.sync_end_date}
+                  onChange={e => setForm(f => ({ ...f, sync_end_date: e.target.value }))}
+                  className="input w-full" />
+              </div>
+            </div>
+
+            <p className="text-xs text-white/30">
+              The GitHub Action runs every 15 minutes but only syncs when today is within the date
+              window and sync is enabled. Set end date to the last day of the tournament.
+            </p>
+
+            <button onClick={handleSave} disabled={saving || !selectedId}
+              className="btn-primary flex items-center gap-2">
+              {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+              {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save Sync Config'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -437,6 +589,7 @@ export default function AdminPage() {
 
       <div className="animate-fade-up-delay-2">
         {activeTab === 'Tournament' && <TournamentTab state={tournamentState} onRefresh={refreshTournament} />}
+        {activeTab === 'Sync' && <SyncTab />}
         {activeTab === 'Scores' && <ScoresTab />}
         {activeTab === 'Players' && <PlayersTab />}
         {activeTab === 'Users' && <UsersTab />}

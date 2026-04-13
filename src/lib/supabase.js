@@ -202,6 +202,26 @@ export async function getHolePars() {
   return { data, error };
 }
 
+// ─── Tournaments ─────────────────────────────────────────────────────────────
+
+export async function getTournaments() {
+  const { data, error } = await supabase
+    .from('tournaments')
+    .select('id, name, sync_url, sync_format, sync_start_date, sync_end_date, sync_enabled')
+    .order('created_at', { ascending: false });
+  return { data, error };
+}
+
+export async function updateTournament(id, updates) {
+  const { data, error } = await supabase
+    .from('tournaments')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
 // ─── Leaderboard ──────────────────────────────────────────────────────────────
 
 export async function getFantasyLeaderboard() {
