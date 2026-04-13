@@ -368,6 +368,24 @@ export async function getHolePars(pgaTournamentId) {
 
 // ─── Roster Round Snapshots ───────────────────────────────────────────────────
 
+// Fetches scores for a specific set of player IDs, one round at a time to
+// avoid Supabase's server-side row cap (default 1000). Each round has at most
+// ~playerIds.length × 18 rows, which is well within limits.
+export async function getScoresForPlayers(pgaTournamentId, playerIds) {
+  if (!playerIds?.length) return [];
+  const results = await Promise.all(
+    [1, 2, 3, 4].map(round =>
+      supabase
+        .from('scores')
+        .select('player_id, round, vs_par')
+        .eq('pga_tournament_id', pgaTournamentId)
+        .eq('round', round)
+        .in('player_id', playerIds)
+    )
+  );
+  return results.flatMap(({ data }) => data || []);
+}
+
 export async function getRoundSnapshots(tournamentId) {
   return await supabase
     .from('roster_round_players')

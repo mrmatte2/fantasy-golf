@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTournament } from '../hooks/useTournament';
-import { getAllRosters, getAllScores, getTournament, getTournamentMembers, getRoundSnapshots } from '../lib/supabase';
+import { getAllRosters, getTournament, getTournamentMembers, getRoundSnapshots, getScoresForPlayers } from '../lib/supabase';
 import { Trophy, Medal, Star } from 'lucide-react';
 
 function formatVsPar(vp) {
@@ -55,9 +55,17 @@ export default function LeaderboardPage() {
     ]);
 
     const pgaId = ft?.pga_tournament_id ?? tournamentId;
-    const { data: scores } = await getAllScores(pgaId);
 
     if (!members) { setLoading(false); return; }
+
+    // Collect every player ID across snapshots + active rosters, then fetch
+    // their scores per round. This avoids Supabase's 1000-row server cap that
+    // would silently truncate when loading all players' scores at once.
+    const rosterPlayerIds = [...new Set([
+      ...(snapshots || []).map(s => s.player_id),
+      ...(rosters || []).filter(r => r.is_active).map(r => r.player_id),
+    ])];
+    const scores = await getScoresForPlayers(pgaId, rosterPlayerIds);
 
     const roundsWithScores = [...new Set((scores || []).map(s => s.round))].sort((a, b) => a - b);
     setCompletedRounds(roundsWithScores);
