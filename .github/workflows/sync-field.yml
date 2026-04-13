@@ -1,0 +1,71 @@
+name: Sync Field
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'What to run'
+        required: true
+        default: 'sync-all'
+        type: choice
+        options:
+          - sync-all        # Create missing events + import hole pars + field for active event
+          - list            # Just print all ESPN event IDs (useful for finding IDs)
+          - single-event    # Import field/pars for one specific event (fill in below)
+      espn_event_id:
+        description: '[single-event] ESPN event ID (e.g. 401811941)'
+        required: false
+        default: ''
+      pga_tournament_id:
+        description: '[single-event] pga_tournaments UUID from your Supabase DB'
+        required: false
+        default: ''
+      hole_pars:
+        description: '[single-event] Also import hole pars?'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install @supabase/supabase-js
+
+      - name: Run field sync
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          ESPN_ID="${{ github.event.inputs.espn_event_id }}"
+          PGA_ID="${{ github.event.inputs.pga_tournament_id }}"
+          HOLE_PARS="${{ github.event.inputs.hole_pars }}"
+
+          if [ "$MODE" = "list" ]; then
+            node scripts/sync-field.js --list
+
+          elif [ "$MODE" = "sync-all" ]; then
+            node scripts/sync-field.js --sync-all
+
+          elif [ "$MODE" = "single-event" ]; then
+            if [ -z "$ESPN_ID" ] || [ -z "$PGA_ID" ]; then
+              echo "ERROR: espn_event_id and pga_tournament_id are required for single-event mode."
+              exit 1
+            fi
+            ARGS="$ESPN_ID $PGA_ID"
+            if [ "$HOLE_PARS" = "true" ]; then
+              ARGS="$ARGS --hole-pars"
+            fi
+            node scripts/sync-field.js $ARGS
+          fi
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
