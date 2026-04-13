@@ -73,50 +73,29 @@ async function fetchScoreboard() {
   return espnFetch(ESPN_SCOREBOARD);
 }
 
-// Returns { venue, year, holePars } from ESPN's core event API
+// Returns { venue, year, holes } from ESPN's core event API
+// Confirmed structure: courses[0].holes[].{ number, shotsToPar, totalYards }
 async function fetchCoreEventData(espnEventId) {
   try {
     const data = await espnFetch(ESPN_CORE_EVENT(espnEventId));
-    const startDate = data.date || data.competitions?.[0]?.date || '';
+    const startDate = data.date || '';
     const year = startDate ? new Date(startDate).getFullYear() : null;
-    const venue = data.venues?.[0]?.fullName || data.venues?.[0]?.name || null;
-    const competition = data.competitions?.[0];
 
-    // Extract hole pars — ESPN stores them on the competition or venue object
-    const holes = parseHolePars(data, competition);
+    // Course name lives at courses[0].name
+    const course = data.courses?.[0];
+    const venue = course?.name || data.venues?.[0]?.fullName || data.venues?.[0]?.name || null;
+
+    // Holes live at courses[0].holes[] with shotsToPar and totalYards
+    const rawHoles = course?.holes || [];
+    const holes = rawHoles
+      .map(h => ({ hole: h.number, par: h.shotsToPar, yards: h.totalYards ?? null }))
+      .filter(h => h.hole >= 1 && h.hole <= 18 && h.par)
+      .sort((a, b) => a.hole - b.hole);
 
     return { venue, year, holes };
   } catch {
     return { venue: null, year: null, holes: [] };
   }
-}
-
-function parseHolePars(data, competition) {
-  const candidates = [
-    competition?.situation?.holes,
-    data.venues?.[0]?.holes,
-    data.venue?.holes,
-  ];
-
-  for (const list of candidates) {
-    if (Array.isArray(list) && list.length > 0 && list[0]?.par !== undefined) {
-      return list
-        .map(h => ({ hole: h.number ?? h.id, par: h.par, yards: h.yardage ?? h.yards ?? null }))
-        .filter(h => h.hole >= 1 && h.hole <= 18 && h.par)
-        .sort((a, b) => a.hole - b.hole);
-    }
-  }
-
-  // Last resort: any 18-element array with par fields on the competition
-  if (competition) {
-    for (const val of Object.values(competition)) {
-      if (Array.isArray(val) && val.length === 18 && val[0]?.par !== undefined) {
-        return val.map((h, i) => ({ hole: i + 1, par: h.par, yards: h.yards ?? null }));
-      }
-    }
-  }
-
-  return [];
 }
 
 // ─── Shared: upsert field players ─────────────────────────────────────────────
