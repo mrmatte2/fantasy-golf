@@ -315,34 +315,42 @@ export default function LeaderboardPage() {
 
 function RoundPlayerList({ rb }) {
   return (
-    <div className="space-y-0.5">
-      {rb.starterScores.map(ss => {
-        const isCounting = rb.best4.some(b => b.playerId === ss.playerId);
-        return (
-          <div key={ss.playerId} className={`flex items-center justify-between text-xs py-0.5 ${
-            isCounting ? 'text-masters-cream' : 'text-white/30'
-          }`}>
-            <span className="flex items-center gap-1">
-              {isCounting && <Star size={9} className="text-masters-gold fill-masters-gold" />}
-              {ss.playerName}
-            </span>
-            <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
-              {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
-            </span>
+    <div>
+      <div className="space-y-0.5">
+        <div className="text-xs text-white/20 uppercase tracking-wider mb-1">Starters</div>
+        {rb.starterScores.map(ss => {
+          const isCounting = rb.best4.some(b => b.playerId === ss.playerId);
+          return (
+            <div key={ss.playerId} className={`flex items-center justify-between text-xs py-0.5 ${
+              isCounting ? 'text-masters-cream' : 'text-white/30'
+            }`}>
+              <span className="flex items-center gap-1">
+                {isCounting && <Star size={9} className="text-masters-gold fill-masters-gold" />}
+                {ss.playerName}
+              </span>
+              <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
+                {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {rb.subScores.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-white/8">
+          <div className="text-xs text-white/20 uppercase tracking-wider mb-1">Substitutes</div>
+          <div className="space-y-0.5">
+            {rb.subScores.map(ss => (
+              <div key={ss.playerId} className="flex items-center justify-between text-xs py-0.5 text-white/25">
+                <span>{ss.playerName}</span>
+                <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
+                  {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
+                </span>
+              </div>
+            ))}
           </div>
-        );
-      })}
-      {rb.subScores.map(ss => (
-        <div key={ss.playerId} className="flex items-center justify-between text-xs py-0.5 text-white/20">
-          <span className="flex items-center gap-2">
-            <span className="italic">sub</span>
-            {ss.playerName}
-          </span>
-          <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
-            {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
-          </span>
         </div>
-      ))}
+      )}
     </div>
   );
 }
