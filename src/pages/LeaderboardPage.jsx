@@ -170,7 +170,7 @@ export default function LeaderboardPage() {
                   </div>
 
                   <div className="flex items-center gap-4">
-                    {currentRound > 0 && (
+                    {completedRounds.length > 0 && (
                       <div className="text-right">
                         <div className={`font-mono text-xl font-bold ${
                           entry.totalVsPar !== null ? vsParClass(entry.totalVsPar) : 'text-white/20'
