@@ -222,6 +222,13 @@ async function syncAll() {
       process.stdout.write(`  ─ ${name} (exists)\n`);
     } else {
       // Create new pga_tournaments row
+      const syncUrl = `https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?event=${espnId}`;
+      const syncStart = ev.startDate ? ev.startDate.slice(0, 10) : null;
+      // End date + 1 day to capture final scores posted after round ends
+      const syncEnd = ev.endDate
+        ? new Date(new Date(ev.endDate).getTime() + 86400000).toISOString().slice(0, 10)
+        : null;
+
       const { data: newT, error } = await supabase
         .from('pga_tournaments')
         .insert({
@@ -229,6 +236,10 @@ async function syncAll() {
           course: ev.venue || null,
           year: year || null,
           espn_event_id: espnId,
+          sync_format: 'espn',
+          sync_url: syncUrl,
+          sync_start_date: syncStart,
+          sync_end_date: syncEnd,
           sync_enabled: false, // admin enables sync manually when ready
         })
         .select('id')
@@ -241,7 +252,7 @@ async function syncAll() {
 
       pgaTournamentId = newT.id;
       created++;
-      process.stdout.write(`  + Created: ${name}${ev.venue ? ` @ ${ev.venue}` : ''}\n`);
+      process.stdout.write(`  + Created: ${name}${ev.venue ? ` @ ${ev.venue}` : ''}${syncStart ? ` (${syncStart} → ${syncEnd})` : ''}\n`);
     }
 
     // Import hole pars if ESPN returned them

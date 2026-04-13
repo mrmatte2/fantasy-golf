@@ -9,6 +9,7 @@
  *
  * Supported formats:
  *   "masters"  — masters.com unofficial JSON feed
+ *   "espn"     — ESPN Golf scoreboard API (all PGA Tour events)
  *   Add new formats by adding a function to the PARSERS object below.
  *
  * Required env vars:
@@ -28,6 +29,19 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+// ─── ESPN fetch helper ────────────────────────────────────────────────────────
+
+async function espnFetch(url) {
+  const resp = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+      'Accept': 'application/json, */*',
+    },
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
+  return resp.json();
+}
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -221,9 +235,94 @@ const PARSERS = {
     return { playersMatched: matched, playersCreated: created, scoresUpserted: totalUpserted };
   },
 
-  // ── Add new formats here ───────────────────────────────────────────────────
-  // async pga_tour(url) { ... },
-  // async european_tour(url) { ... },
+  /**
+   * espn — ESPN Golf scoreboard API
+   *
+   * URL format: https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard?event=<espn_event_id>
+   *
+   * Response shape:
+   *   events[0].competitions[0].competitors[].{
+   *     athlete.fullName,
+   *     linescores[].{ period: roundNum, linescores[].{ period: holeNum, value: strokes } }
+   *   }
+   */
+  async espn(url, pgaTournamentId) {
+    console.log(`Fetching: ${url}`);
+
+    const data = await espnFetch(url);
+    const event = (data.events || [])[0];
+    if (!event) {
+      console.log('No event data returned — tournament may not be active yet.');
+      return { playersMatched: 0, playersCreated: 0, scoresUpserted: 0 };
+    }
+
+    const competitors = event.competitions?.[0]?.competitors || [];
+    if (!competitors.length) {
+      console.log('No competitors found in ESPN response yet.');
+      return { playersMatched: 0, playersCreated: 0, scoresUpserted: 0 };
+    }
+
+    const [dbPlayers, parMap] = await Promise.all([loadPlayers(), loadHolePars(pgaTournamentId)]);
+    const upserts = [];
+    let matched = 0;
+    let created = 0;
+
+    for (const comp of competitors) {
+      const fullName = comp.athlete?.fullName || comp.athlete?.displayName;
+      if (!fullName) continue;
+
+      let playerId = findPlayer(dbPlayers, fullName);
+      if (!playerId) {
+        playerId = await createPlayer(fullName);
+        dbPlayers.push({ id: playerId, name: fullName });
+        created++;
+      } else {
+        matched++;
+      }
+
+      // comp.linescores: one entry per round (period = round number 1–4)
+      // each has linescores: one entry per hole (period = hole number 1–18, value = stroke count as string)
+      for (const roundLs of comp.linescores || []) {
+        const round = roundLs.period;
+        if (!round || round < 1 || round > 4) continue;
+
+        for (const holeLs of roundLs.linescores || []) {
+          const hole = holeLs.period;
+          const strokes = parseInt(holeLs.value, 10);
+          if (!hole || hole < 1 || hole > 18 || isNaN(strokes) || strokes <= 0) continue;
+
+          upserts.push({
+            pga_tournament_id: pgaTournamentId,
+            player_id: playerId,
+            round,
+            hole,
+            strokes,
+            par: parMap[hole] ?? 4,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    if (!upserts.length) {
+      console.log('No hole scores available yet (round may not have started).');
+      return { playersMatched: matched, playersCreated: created, scoresUpserted: 0 };
+    }
+
+    let totalUpserted = 0;
+    for (let i = 0; i < upserts.length; i += 200) {
+      const batch = upserts.slice(i, i + 200);
+      const { error } = await supabase
+        .from('scores')
+        .upsert(batch, { onConflict: 'pga_tournament_id,player_id,round,hole' });
+      if (error) throw new Error(`Upsert failed: ${error.message}`);
+      totalUpserted += batch.length;
+    }
+
+    await snapshotRostersIfNewRound(pgaTournamentId);
+
+    return { playersMatched: matched, playersCreated: created, scoresUpserted: totalUpserted };
+  },
 
 };
 
