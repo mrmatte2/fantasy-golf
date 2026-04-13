@@ -334,7 +334,8 @@ export async function getAllScores(pgaTournamentId, round) {
     .select('*, players(name)')
     .eq('pga_tournament_id', pgaTournamentId)
     .order('round')
-    .order('hole');
+    .order('hole')
+    .limit(10000); // override Supabase's default 1000-row cap
   if (round) query = query.eq('round', round);
   return await query;
 }

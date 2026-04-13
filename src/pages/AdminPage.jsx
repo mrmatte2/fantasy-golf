@@ -7,7 +7,7 @@ import {
   getAllPlayers, updatePlayer, createPlayer, markAllPlayersMissedCut,
   getAllProfiles, updateProfile,
   getPlayers, getAllScores, upsertScore,
-  getTournamentPlayers, upsertTournamentPlayers,
+  getTournamentPlayers, upsertTournamentPlayers, getPlayerScores,
 } from '../lib/supabase';
 import { Settings, Lock, Unlock, Edit3, Save, X, RefreshCw, Plus, Trash2, Trophy } from 'lucide-react';
 
@@ -760,10 +760,10 @@ function ScoresTab() {
 
   useEffect(() => {
     if (!selectedPlayer || !selectedPgaId) return;
-    getAllScores(selectedPgaId, selectedRound).then(({ data }) => {
-      const playerScores = (data || []).filter(s => s.player_id === selectedPlayer);
+    getPlayerScores(selectedPlayer, selectedPgaId).then(({ data }) => {
+      const roundScores = (data || []).filter(s => s.round === selectedRound);
       const map = {};
-      playerScores.forEach(s => { map[s.hole] = s.strokes; });
+      roundScores.forEach(s => { map[s.hole] = s.strokes; });
       setHoleScores(map);
     });
   }, [selectedPlayer, selectedRound, selectedPgaId]);
