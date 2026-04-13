@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../../hooks/useAuth';
-import { useTournament } from '../../hooks/useTournament';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
+import { useTournament } from '../hooks/useTournament';
 import {
-  getUserRoster, getPlayerScores, getHolePars, updateRosterEntry, addToRoster, removeFromRoster, getPlayers
-} from '../../lib/supabase';
-import { ArrowLeftRight, ChevronDown, ChevronRight, Lock, Star } from 'lucide-react';
+  getUserRoster, getPlayerScores, getHolePars, updateRosterEntry, getPlayers,
+  getUserMembership, joinTournament,
+} from '../lib/supabase';
+import { ArrowLeftRight, ChevronDown, ChevronRight, Lock, Star, LogIn } from 'lucide-react';
 
 function vsParClass(vp) {
   if (vp < 0) return 'score-under';
@@ -19,10 +21,9 @@ function formatVsPar(vp) {
 }
 
 function HoleByHoleRow({ scores, pars, round }) {
-  const scoreMap = Object.fromEntries((scores || [])
-    .filter(s => s.round === round)
-    .map(s => [s.hole, s]));
-
+  const scoreMap = Object.fromEntries(
+    (scores || []).filter(s => s.round === round).map(s => [s.hole, s])
+  );
   const roundTotal = Object.values(scoreMap).reduce((sum, s) => sum + (s.vs_par || 0), 0);
   const holesPlayed = Object.keys(scoreMap).length;
 
@@ -36,16 +37,12 @@ function HoleByHoleRow({ scores, pars, round }) {
         <thead>
           <tr className="text-white/30">
             <td className="py-1 px-1 text-left">Hole</td>
-            {(pars || []).map(p => (
-              <td key={p.hole} className="py-1 px-1 text-center w-8">{p.hole}</td>
-            ))}
+            {(pars || []).map(p => <td key={p.hole} className="py-1 px-1 text-center w-8">{p.hole}</td>)}
             <td className="py-1 px-2 text-right font-medium">Total</td>
           </tr>
           <tr className="text-white/20">
             <td className="py-0.5 px-1 text-left">Par</td>
-            {(pars || []).map(p => (
-              <td key={p.hole} className="py-0.5 px-1 text-center">{p.par}</td>
-            ))}
+            {(pars || []).map(p => <td key={p.hole} className="py-0.5 px-1 text-center">{p.par}</td>)}
             <td className="py-0.5 px-2 text-right">72</td>
           </tr>
         </thead>
@@ -73,61 +70,61 @@ function HoleByHoleRow({ scores, pars, round }) {
 function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubClick, isLocked, isSub }) {
   const [expanded, setExpanded] = useState(false);
   const player = rosterEntry.players;
-
   const roundScores = (scores || []).filter(s => s.round === currentRound);
   const roundTotal = roundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
   const holesPlayed = roundScores.length;
+  const missedCut = !player?.made_cut && !player?.is_withdrawn;
+  const needsSub = !isSub && missedCut && !isLocked;
 
   return (
     <div className={`rounded-xl border transition-all ${
-      isSub
-        ? 'border-white/8 bg-white/2'
-        : isTopFour
-        ? 'border-masters-gold/30 bg-masters-gold/5'
-        : 'border-white/10 bg-white/3'
+      missedCut && !isSub ? 'border-red-700/50 bg-red-900/10'
+      : isSub && missedCut ? 'border-red-800/30 bg-red-900/5 opacity-60'
+      : isSub ? 'border-white/8 bg-white/2'
+      : isTopFour ? 'border-masters-gold/30 bg-masters-gold/5'
+      : 'border-white/10 bg-white/3'
     }`}>
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-3">
           {!isSub && (
-            <Star size={12} className={isTopFour ? 'text-masters-gold fill-masters-gold' : 'text-white/20'} />
+            missedCut
+              ? <ArrowLeftRight size={14} className="text-red-400 shrink-0" />
+              : <Star size={12} className={isTopFour ? 'text-masters-gold fill-masters-gold' : 'text-white/20'} />
           )}
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-display font-semibold text-masters-cream text-sm">
+              <span className={`font-display font-semibold text-sm ${missedCut ? 'text-red-300/80 line-through' : 'text-masters-cream'}`}>
                 {player?.name}
               </span>
               {player?.is_withdrawn && <span className="badge-wd">WD</span>}
-              {!player?.made_cut && !player?.is_withdrawn && currentRound > 2 && (
-                <span className="badge-cut">CUT</span>
-              )}
-              {isSub && <span className="badge-sub">Sub</span>}
-              {!isSub && isTopFour && (
-                <span className="text-xs text-masters-gold/60">Counting</span>
-              )}
+              {missedCut && <span className="badge-cut">MISSED CUT</span>}
+              {isSub && !missedCut && <span className="badge-sub">Sub</span>}
+              {isSub && missedCut && <span className="text-xs text-red-400/60">Sub · Cut</span>}
+              {!isSub && !missedCut && isTopFour && <span className="text-xs text-masters-gold/60">Counting</span>}
             </div>
-            <div className="text-xs text-white/40 mt-0.5">
-              #{player?.world_ranking} WR · {player?.odds_fractional}
-            </div>
+            <div className="text-xs text-white/40 mt-0.5">#{player?.world_ranking} WR · {player?.odds_fractional}</div>
+            {needsSub && (
+              <div className="text-xs text-red-400 mt-1 font-medium">⚠ Substitute needed for Round {currentRound + 1}</div>
+            )}
           </div>
         </div>
-
         <div className="flex items-center gap-3">
           {currentRound > 0 && holesPlayed > 0 && (
             <div className="text-right">
-              <div className={`font-mono font-bold text-sm ${vsParClass(roundTotal)}`}>
-                {formatVsPar(roundTotal)}
-              </div>
+              <div className={`font-mono font-bold text-sm ${vsParClass(roundTotal)}`}>{formatVsPar(roundTotal)}</div>
               <div className="text-xs text-white/30">{holesPlayed} holes</div>
             </div>
           )}
-
           {!isLocked && (
             <button onClick={() => onSubClick(rosterEntry)}
-              className="p-1.5 rounded-lg text-white/30 hover:text-masters-gold hover:bg-masters-gold/10 transition-colors">
+              className={`p-1.5 rounded-lg transition-colors ${
+                needsSub
+                  ? 'text-red-400 bg-red-900/30 hover:bg-red-900/50'
+                  : 'text-white/30 hover:text-masters-gold hover:bg-masters-gold/10'
+              }`}>
               <ArrowLeftRight size={14} />
             </button>
           )}
-
           {currentRound > 0 && (
             <button onClick={() => setExpanded(!expanded)}
               className="p-1.5 rounded-lg text-white/30 hover:text-white/70 transition-colors">
@@ -136,14 +133,11 @@ function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubCl
           )}
         </div>
       </div>
-
       {expanded && currentRound > 0 && (
         <div className="px-4 pb-4 border-t border-white/5">
-          {Array.from({ length: currentRound }).map((_,i) => (
-            <div key={i+1}>
-              <div className="text-xs text-white/30 mt-3 mb-1 font-medium uppercase tracking-wider">
-                Round {i + 1}
-              </div>
+          {Array.from({ length: currentRound }).map((_, i) => (
+            <div key={i + 1}>
+              <div className="text-xs text-white/30 mt-3 mb-1 font-medium uppercase tracking-wider">Round {i + 1}</div>
               <HoleByHoleRow scores={scores} pars={pars} round={i + 1} />
             </div>
           ))}
@@ -154,47 +148,54 @@ function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubCl
 }
 
 export default function MyTeamPage() {
+  const { id: tournamentId } = useParams();
   const { user } = useAuth();
-  const { tournamentState } = useTournament();
+  const navigate = useNavigate();
+  const { tournament } = useTournament(tournamentId);
 
   const [roster, setRoster] = useState([]);
-  const [scores, setScores] = useState({}); // playerId -> scores[]
+  const [scores, setScores] = useState({});
   const [pars, setPars] = useState([]);
+  const [membership, setMembership] = useState(undefined);
   const [loading, setLoading] = useState(true);
-  const [subModal, setSubModal] = useState(null); // { outEntry } | null
-  const [availableSubs, setAvailableSubs] = useState([]);
+  const [subModal, setSubModal] = useState(null);
+  const [subs, setSubs] = useState([]);
 
-  const isLocked = tournamentState?.is_locked;
-  const currentRound = tournamentState?.current_round || 0;
+  // Join flow
+  const [joinTeamName, setJoinTeamName] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState('');
+
+  const isLocked = tournament?.is_locked;
+  const currentRound = tournament?.current_round || 0;
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [{ data: rst }, { data: holePars }] = await Promise.all([
-      getUserRoster(user.id),
+    const [{ data: rst }, { data: holePars }, { data: mem }] = await Promise.all([
+      getUserRoster(user.id, tournamentId),
       getHolePars(),
+      getUserMembership(tournamentId, user.id),
     ]);
     const rosterData = rst || [];
     setRoster(rosterData);
     setPars(holePars || []);
+    setMembership(mem ?? null);
 
-    // Load scores for all players
     const scoreResults = await Promise.all(
       rosterData.map(async r => {
-        const { data } = await getPlayerScores(r.player_id);
+        const { data } = await getPlayerScores(r.player_id, tournamentId);
         return { playerId: r.player_id, scores: data || [] };
       })
     );
-    const scoreMap = Object.fromEntries(scoreResults.map(s => [s.playerId, s.scores]));
-    setScores(scoreMap);
+    setScores(Object.fromEntries(scoreResults.map(s => [s.playerId, s.scores])));
     setLoading(false);
-  }, [user.id]);
+  }, [user.id, tournamentId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   const starters = roster.filter(r => r.slot_type === 'starter' && r.is_active);
-  const subs = roster.filter(r => r.slot_type === 'sub' && r.is_active);
+  const subsRoster = roster.filter(r => r.slot_type === 'sub' && r.is_active);
 
-  // Determine top 4 starters by round score (for "best 4 of 5" highlight)
   const startersWithScores = starters.map(r => {
     const roundScores = (scores[r.player_id] || []).filter(s => s.round === currentRound);
     const roundTotal = roundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
@@ -202,11 +203,9 @@ export default function MyTeamPage() {
   });
 
   const topFourIds = new Set(
-    [...startersWithScores]
-      .filter(s => s.holesPlayed > 0)
+    [...startersWithScores].filter(s => s.holesPlayed > 0)
       .sort((a, b) => a.roundTotal - b.roundTotal)
-      .slice(0, 4)
-      .map(s => s.player_id)
+      .slice(0, 4).map(s => s.player_id)
   );
 
   const teamTotal = startersWithScores
@@ -215,28 +214,60 @@ export default function MyTeamPage() {
 
   async function openSubModal(outEntry) {
     setSubModal({ outEntry });
-    const { data: allPlayers } = await getPlayers();
-    // Available subs: in roster as sub, not already a starter
-    const starterIds = new Set(starters.map(s => s.player_id));
-    const subsInRoster = subs.map(s => s.player_id);
-    setAvailableSubs(subs);
+    setSubs(subsRoster);
   }
 
   async function handleSub(outEntry, inEntry) {
-    // Swap slot types
-    await updateRosterEntry(user.id, outEntry.player_id, { slot_type: 'sub', slot_number: inEntry.slot_number });
-    await updateRosterEntry(user.id, inEntry.player_id, { slot_type: 'starter', slot_number: outEntry.slot_number });
+    await updateRosterEntry(user.id, outEntry.player_id, tournamentId, { slot_type: 'sub', slot_number: inEntry.slot_number });
+    await updateRosterEntry(user.id, inEntry.player_id, tournamentId, { slot_type: 'starter', slot_number: outEntry.slot_number });
     setSubModal(null);
     await loadData();
   }
 
-  if (loading) return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
-      <div className="space-y-3">
-        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton h-20 rounded-xl" />)}
+  async function handleJoin() {
+    if (!joinTeamName.trim()) { setJoinError('Team name is required'); return; }
+    setJoining(true);
+    setJoinError('');
+    const { error, data } = await joinTournament(tournamentId, user.id, joinTeamName.trim());
+    if (error) { setJoinError(error.message); setJoining(false); return; }
+    setMembership(data);
+    setJoining(false);
+  }
+
+  if (loading || membership === undefined) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="skeleton h-20 rounded-xl" />)}</div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (!membership) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center">
+        <div className="card-dark">
+          <LogIn size={28} className="mx-auto mb-3 text-masters-gold/60" />
+          <h2 className="font-display font-bold text-masters-cream mb-2">Join to View Your Team</h2>
+          <p className="text-white/40 text-sm mb-5">
+            Choose a team name for <span className="text-white/60">{tournament?.name}</span>.
+          </p>
+          <div className="text-left mb-4">
+            <label className="label">Team Name</label>
+            <input value={joinTeamName} onChange={e => { setJoinTeamName(e.target.value); setJoinError(''); }}
+              className="input" placeholder="e.g. Amen Corner FC" autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleJoin()} />
+            {joinError && <p className="text-red-400 text-xs mt-1">{joinError}</p>}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={handleJoin} disabled={joining} className="btn-primary flex-1">
+              {joining ? 'Joining…' : 'Join Tournament'}
+            </button>
+            <button onClick={() => navigate('/tournaments')} className="btn-secondary flex-1">Back</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -244,16 +275,15 @@ export default function MyTeamPage() {
         <div>
           <h1 className="font-display text-3xl font-bold text-masters-cream">My Team</h1>
           <p className="text-white/40 text-sm mt-1">
-            {isLocked ? '🔒 Roster locked · ' : ''}
-            {currentRound > 0 ? `Round ${currentRound} in progress` : 'Pre-tournament'}
+            {membership.team_name}
+            {isLocked ? ' · Roster locked' : ''}
+            {currentRound > 0 ? ` · Round ${currentRound} in progress` : ' · Pre-tournament'}
           </p>
         </div>
         {currentRound > 0 && (
           <div className="card-dark text-center min-w-32">
-            <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Round {currentRound} Score</div>
-            <div className={`font-mono text-2xl font-bold ${vsParClass(teamTotal)}`}>
-              {formatVsPar(teamTotal)}
-            </div>
+            <div className="text-xs text-white/40 uppercase tracking-wider mb-1">R{currentRound} Score</div>
+            <div className={`font-mono text-2xl font-bold ${vsParClass(teamTotal)}`}>{formatVsPar(teamTotal)}</div>
             <div className="text-xs text-white/30 mt-0.5">best 4 of 5</div>
           </div>
         )}
@@ -261,67 +291,62 @@ export default function MyTeamPage() {
 
       {isLocked && (
         <div className="mb-5 px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 flex items-center gap-3 text-red-300 text-sm">
-          <Lock size={15} />
-          Roster is locked for the current round. Substitutions open between rounds.
+          <Lock size={15} /> Roster is locked for the current round. Substitutions open between rounds.
         </div>
       )}
 
-      {/* Starters */}
+      {(() => {
+        const cutStarters = starters.filter(r => !r.players?.made_cut && !r.players?.is_withdrawn);
+        const cutSubs = subsRoster.filter(r => !r.players?.made_cut && !r.players?.is_withdrawn);
+        if (cutStarters.length === 0) return null;
+        return (
+          <div className="mb-5 px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 text-sm">
+            <div className="flex items-center gap-2 text-red-300 font-medium mb-1">
+              <ArrowLeftRight size={15} />
+              {cutStarters.length} starter{cutStarters.length > 1 ? 's' : ''} missed the cut
+            </div>
+            <p className="text-red-300/60 text-xs">
+              {isLocked
+                ? 'Substitutions will open between rounds.'
+                : `Swap them out before Round ${currentRound + 1}. ${cutSubs.length > 0 ? `Note: ${cutSubs.length} of your subs also missed the cut.` : 'Check your subs below — pick one who survived.'}`
+              }
+            </p>
+          </div>
+        );
+      })()}
+
       <div className="mb-6 animate-fade-up-delay-1">
         <h2 className="font-display font-semibold text-masters-cream mb-3 flex items-center gap-2">
-          Starters
-          <span className="text-xs font-body text-white/40">(best 4 count)</span>
+          Starters <span className="text-xs font-body text-white/40">(best 4 count)</span>
         </h2>
         <div className="space-y-2">
           {starters.map(r => (
-            <PlayerRow
-              key={r.id}
-              rosterEntry={r}
-              isTopFour={topFourIds.has(r.player_id)}
-              scores={scores[r.player_id]}
-              pars={pars}
-              currentRound={currentRound}
-              onSubClick={openSubModal}
-              isLocked={isLocked}
-              isSub={false}
-            />
+            <PlayerRow key={r.id} rosterEntry={r} isTopFour={topFourIds.has(r.player_id)}
+              scores={scores[r.player_id]} pars={pars} currentRound={currentRound}
+              onSubClick={openSubModal} isLocked={isLocked} isSub={false} />
           ))}
           {starters.length === 0 && (
             <div className="card-dark text-center text-white/30 text-sm py-8">
-              No starters selected. Go to the Draft page to pick your team.
+              No starters selected. Go to Draft to pick your team.
             </div>
           )}
         </div>
       </div>
 
-      {/* Substitutes */}
       <div className="animate-fade-up-delay-2">
-        <h2 className="font-display font-semibold text-masters-cream mb-3">
-          Substitutes
-        </h2>
+        <h2 className="font-display font-semibold text-masters-cream mb-3">Substitutes</h2>
         <div className="space-y-2">
-          {subs.map(r => (
-            <PlayerRow
-              key={r.id}
-              rosterEntry={r}
-              isTopFour={false}
-              scores={scores[r.player_id]}
-              pars={pars}
-              currentRound={currentRound}
-              onSubClick={() => {}}
-              isLocked={isLocked}
-              isSub={true}
-            />
+          {subsRoster.map(r => (
+            <PlayerRow key={r.id} rosterEntry={r} isTopFour={false}
+              scores={scores[r.player_id]} pars={pars} currentRound={currentRound}
+              onSubClick={() => {}} isLocked={isLocked} isSub={true} />
           ))}
-          {subs.length === 0 && (
-            <div className="card-dark text-center text-white/30 text-sm py-6">
-              No substitutes selected.
-            </div>
+          {subsRoster.length === 0 && (
+            <div className="card-dark text-center text-white/30 text-sm py-6">No substitutes selected.</div>
           )}
         </div>
       </div>
 
-      {/* Sub modal */}
       {subModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
           onClick={() => setSubModal(null)}>
@@ -329,21 +354,39 @@ export default function MyTeamPage() {
             <h3 className="font-display font-bold text-masters-cream mb-1">
               Substitute {subModal.outEntry.players?.name}
             </h3>
-            <p className="text-white/40 text-sm mb-4">
-              Choose a substitute to swap in:
-            </p>
+            <p className="text-white/40 text-sm mb-4">Choose a substitute to swap in:</p>
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {availableSubs.length === 0 && (
-                <p className="text-white/30 text-sm text-center py-4">No substitutes available</p>
-              )}
-              {availableSubs.map(sub => (
-                <button key={sub.id}
-                  onClick={() => handleSub(subModal.outEntry, sub)}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-white/10 hover:border-masters-gold/40 hover:bg-masters-gold/5 transition-colors">
-                  <div className="font-medium text-masters-cream text-sm">{sub.players?.name}</div>
-                  <div className="text-xs text-white/40">#{sub.players?.world_ranking} WR · £{sub.players?.price_override ?? sub.players?.price}</div>
-                </button>
-              ))}
+              {subs.length === 0 && <p className="text-white/30 text-sm text-center py-4">No substitutes available</p>}
+              {subs
+                .sort((a, b) => {
+                  // survivors first
+                  const aOk = a.players?.made_cut && !a.players?.is_withdrawn;
+                  const bOk = b.players?.made_cut && !b.players?.is_withdrawn;
+                  return bOk - aOk;
+                })
+                .map(sub => {
+                  const survived = sub.players?.made_cut && !sub.players?.is_withdrawn;
+                  return (
+                    <button key={sub.id} onClick={() => survived && handleSub(subModal.outEntry, sub)}
+                      disabled={!survived}
+                      className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+                        survived
+                          ? 'border-white/10 hover:border-masters-gold/40 hover:bg-masters-gold/5'
+                          : 'border-red-900/30 bg-red-900/10 opacity-50 cursor-not-allowed'
+                      }`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`font-medium text-sm ${survived ? 'text-masters-cream' : 'text-red-300/70 line-through'}`}>
+                          {sub.players?.name}
+                        </span>
+                        {!survived && <span className="badge-cut text-xs">CUT</span>}
+                      </div>
+                      <div className="text-xs text-white/40 mt-0.5">
+                        #{sub.players?.world_ranking} WR · £{sub.players?.price_override ?? sub.players?.price}
+                        {survived && <span className="ml-2 text-green-400">✓ Made cut</span>}
+                      </div>
+                    </button>
+                  );
+                })}
             </div>
             <button onClick={() => setSubModal(null)} className="btn-secondary w-full mt-4">Cancel</button>
           </div>

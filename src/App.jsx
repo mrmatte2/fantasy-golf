@@ -1,8 +1,9 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import Navbar from './components/shared/Navbar';
 import LoginPage from './pages/LoginPage';
+import TournamentsPage from './pages/TournamentsPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import DraftPage from './pages/DraftPage';
 import MyTeamPage from './pages/MyTeamPage';
@@ -18,7 +19,7 @@ function ProtectedRoute({ children, adminOnly = false }) {
   );
 
   if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && !profile?.is_admin) return <Navigate to="/leaderboard" replace />;
+  if (adminOnly && !profile?.is_admin) return <Navigate to="/tournaments" replace />;
 
   return children;
 }
@@ -35,37 +36,48 @@ function AppLayout({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <HashRouter>
         <Routes>
+          {/* Public */}
           <Route path="/login" element={<LoginPage />} />
 
-          <Route path="/leaderboard" element={
+          {/* Tournament lobby */}
+          <Route path="/tournaments" element={
+            <ProtectedRoute>
+              <AppLayout><TournamentsPage /></AppLayout>
+            </ProtectedRoute>
+          } />
+
+          {/* Per-tournament routes — all under /tournament/:id/ */}
+          <Route path="/tournament/:id/leaderboard" element={
             <ProtectedRoute>
               <AppLayout><LeaderboardPage /></AppLayout>
             </ProtectedRoute>
           } />
 
-          <Route path="/draft" element={
+          <Route path="/tournament/:id/draft" element={
             <ProtectedRoute>
               <AppLayout><DraftPage /></AppLayout>
             </ProtectedRoute>
           } />
 
-          <Route path="/my-team" element={
+          <Route path="/tournament/:id/my-team" element={
             <ProtectedRoute>
               <AppLayout><MyTeamPage /></AppLayout>
             </ProtectedRoute>
           } />
 
+          {/* Admin */}
           <Route path="/admin" element={
             <ProtectedRoute adminOnly>
               <AppLayout><AdminPage /></AppLayout>
             </ProtectedRoute>
           } />
 
-          <Route path="*" element={<Navigate to="/leaderboard" replace />} />
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/tournaments" replace />} />
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </AuthProvider>
   );
 }

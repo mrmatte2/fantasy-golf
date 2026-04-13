@@ -9,238 +9,267 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// ─── Auth helpers ────────────────────────────────────────────────────────────
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export async function signUp(email, password, username, teamName) {
-  const { data, error } = await supabase.auth.signUp({
+export async function signUp(email, password, username) {
+  return await supabase.auth.signUp({
     email,
     password,
-    options: { data: { username, team_name: teamName } },
+    options: { data: { username } },
   });
-  return { data, error };
 }
 
 export async function signIn(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  return { data, error };
+  return await supabase.auth.signInWithPassword({ email, password });
 }
 
 export async function signOut() {
   return await supabase.auth.signOut();
 }
 
-export async function getSession() {
-  const { data } = await supabase.auth.getSession();
-  return data.session;
-}
-
-// ─── Profile helpers ─────────────────────────────────────────────────────────
+// ─── Profiles ─────────────────────────────────────────────────────────────────
 
 export async function getProfile(userId) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single();
-  return { data, error };
+  return await supabase.from('profiles').select('*').eq('id', userId).single();
 }
 
 export async function getAllProfiles() {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .order('username');
-  return { data, error };
+  return await supabase.from('profiles').select('*').order('username');
 }
 
 export async function updateProfile(userId, updates) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .update(updates)
-    .eq('id', userId)
-    .select()
-    .single();
-  return { data, error };
+  return await supabase.from('profiles').update(updates).eq('id', userId).select().single();
 }
 
-// ─── Tournament state ─────────────────────────────────────────────────────────
+// ─── Tournaments ──────────────────────────────────────────────────────────────
 
-export async function getTournamentState() {
-  const { data, error } = await supabase
-    .from('tournament_state')
+export async function getTournaments() {
+  return await supabase
+    .from('tournaments')
     .select('*')
-    .single();
-  return { data, error };
+    .order('created_at', { ascending: false });
 }
 
-export async function updateTournamentState(updates) {
-  const { data, error } = await supabase
-    .from('tournament_state')
+export async function getTournament(id) {
+  return await supabase.from('tournaments').select('*').eq('id', id).single();
+}
+
+export async function createTournament(data) {
+  return await supabase.from('tournaments').insert(data).select().single();
+}
+
+export async function updateTournament(id, updates) {
+  return await supabase
+    .from('tournaments')
     .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', 1)
+    .eq('id', id)
     .select()
     .single();
-  return { data, error };
 }
 
-// ─── Players ──────────────────────────────────────────────────────────────────
+export async function deleteTournament(id) {
+  return await supabase.from('tournaments').delete().eq('id', id);
+}
+
+// ─── Tournament Memberships ───────────────────────────────────────────────────
+
+export async function getUserMembership(tournamentId, userId) {
+  return await supabase
+    .from('tournament_memberships')
+    .select('*')
+    .eq('tournament_id', tournamentId)
+    .eq('user_id', userId)
+    .maybeSingle();
+}
+
+export async function getUserMemberships(userId) {
+  return await supabase
+    .from('tournament_memberships')
+    .select('*, tournaments(*)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+}
+
+export async function joinTournament(tournamentId, userId, teamName) {
+  return await supabase
+    .from('tournament_memberships')
+    .insert({ tournament_id: tournamentId, user_id: userId, team_name: teamName })
+    .select()
+    .single();
+}
+
+export async function getTournamentMembers(tournamentId) {
+  return await supabase
+    .from('tournament_memberships')
+    .select('*, profiles(username, is_admin)')
+    .eq('tournament_id', tournamentId);
+}
+
+// ─── Tournament Players (per-tournament field + pricing) ──────────────────────
+
+export async function getTournamentPlayers(tournamentId) {
+  const { data, error } = await supabase
+    .from('tournament_players')
+    .select('price, odds_fractional, world_ranking, is_in_field, players(*)')
+    .eq('tournament_id', tournamentId)
+    .eq('is_in_field', true)
+    .order('world_ranking');
+  // Flatten: merge tournament-specific price/odds onto the player object
+  const flattened = (data || []).map(tp => ({
+    ...tp.players,
+    price: tp.price ?? tp.players?.price,
+    odds_fractional: tp.odds_fractional ?? tp.players?.odds_fractional,
+    world_ranking: tp.world_ranking ?? tp.players?.world_ranking,
+  }));
+  return { data: flattened, error };
+}
+
+export async function getTournamentField(tournamentId) {
+  // Returns raw tournament_players rows (for admin field setup)
+  return await supabase
+    .from('tournament_players')
+    .select('*, players(id, name, country, world_ranking, owgr_id)')
+    .eq('tournament_id', tournamentId)
+    .order('world_ranking');
+}
+
+export async function upsertTournamentPlayers(tournamentId, entries) {
+  // entries: [{ player_id, price, odds_fractional, world_ranking, is_in_field }]
+  const rows = entries.map(e => ({ ...e, tournament_id: tournamentId }));
+  return await supabase
+    .from('tournament_players')
+    .upsert(rows, { onConflict: 'tournament_id,player_id' })
+    .select();
+}
+
+export async function getTournamentPriceMap(tournamentId) {
+  const { data } = await supabase
+    .from('tournament_players')
+    .select('player_id, price')
+    .eq('tournament_id', tournamentId);
+  return Object.fromEntries((data || []).map(tp => [tp.player_id, tp.price ?? 0]));
+}
+
+// ─── Players (global master list) ─────────────────────────────────────────────
 
 export async function getPlayers() {
-  const { data, error } = await supabase
+  return await supabase
     .from('players')
     .select('*')
     .eq('is_active', true)
     .order('world_ranking');
-  return { data, error };
+}
+
+export async function getAllPlayers() {
+  return await supabase.from('players').select('*').order('world_ranking');
 }
 
 export async function updatePlayer(playerId, updates) {
-  const { data, error } = await supabase
-    .from('players')
-    .update(updates)
-    .eq('id', playerId)
-    .select()
-    .single();
-  return { data, error };
+  return await supabase.from('players').update(updates).eq('id', playerId).select().single();
 }
 
-export async function upsertPlayer(player) {
-  const { data, error } = await supabase
-    .from('players')
-    .upsert(player)
-    .select()
-    .single();
-  return { data, error };
+export async function createPlayer(player) {
+  return await supabase.from('players').insert(player).select().single();
 }
 
-// ─── Rosters ──────────────────────────────────────────────────────────────────
+export async function deletePlayer(playerId) {
+  return await supabase.from('players').delete().eq('id', playerId);
+}
 
-export async function getUserRoster(userId) {
-  const { data, error } = await supabase
+export async function markAllPlayersMissedCut() {
+  return await supabase.from('players').update({ made_cut: false }).neq('id', '00000000-0000-0000-0000-000000000000');
+}
+
+// ─── Rosters (per user, per tournament) ───────────────────────────────────────
+
+export async function getUserRoster(userId, tournamentId) {
+  return await supabase
     .from('rosters')
-    .select(`*, players(*)`)
+    .select('*, players(*)')
     .eq('user_id', userId)
+    .eq('tournament_id', tournamentId)
     .order('slot_number');
-  return { data, error };
 }
 
-export async function getAllRosters() {
-  const { data, error } = await supabase
+export async function getAllRosters(tournamentId) {
+  return await supabase
     .from('rosters')
-    .select(`*, players(*), profiles(username, team_name)`);
-  return { data, error };
+    .select('*, players(*), profiles(username)')
+    .eq('tournament_id', tournamentId);
 }
 
-export async function addToRoster(userId, playerId, slotType, slotNumber) {
-  const { data, error } = await supabase
+export async function addToRoster(userId, playerId, tournamentId, slotType, slotNumber) {
+  return await supabase
     .from('rosters')
-    .insert({ user_id: userId, player_id: playerId, slot_type: slotType, slot_number: slotNumber })
+    .insert({ user_id: userId, player_id: playerId, tournament_id: tournamentId, slot_type: slotType, slot_number: slotNumber })
     .select()
     .single();
-  return { data, error };
 }
 
-export async function removeFromRoster(userId, playerId) {
-  const { error } = await supabase
+export async function removeFromRoster(userId, playerId, tournamentId) {
+  return await supabase
     .from('rosters')
     .delete()
     .eq('user_id', userId)
-    .eq('player_id', playerId);
-  return { error };
+    .eq('player_id', playerId)
+    .eq('tournament_id', tournamentId);
 }
 
-export async function updateRosterEntry(userId, playerId, updates) {
-  const { data, error } = await supabase
+export async function updateRosterEntry(userId, playerId, tournamentId, updates) {
+  return await supabase
     .from('rosters')
     .update(updates)
     .eq('user_id', userId)
     .eq('player_id', playerId)
+    .eq('tournament_id', tournamentId)
     .select()
     .single();
-  return { data, error };
 }
 
 // ─── Scores ───────────────────────────────────────────────────────────────────
 
-export async function getPlayerScores(playerId, round) {
-  let query = supabase
+export async function getPlayerScores(playerId, tournamentId) {
+  return await supabase
     .from('scores')
     .select('*')
     .eq('player_id', playerId)
+    .eq('tournament_id', tournamentId)
+    .order('round')
     .order('hole');
-  if (round) query = query.eq('round', round);
-  const { data, error } = await query;
-  return { data, error };
 }
 
-export async function getAllScores(round) {
+export async function getAllScores(tournamentId, round) {
   let query = supabase
     .from('scores')
     .select('*, players(name)')
+    .eq('tournament_id', tournamentId)
     .order('round')
     .order('hole');
   if (round) query = query.eq('round', round);
-  const { data, error } = await query;
-  return { data, error };
+  return await query;
 }
 
-export async function upsertScore(playerId, round, hole, strokes, par) {
-  const { data, error } = await supabase
+export async function upsertScore(playerId, tournamentId, round, hole, strokes, par) {
+  return await supabase
     .from('scores')
-    .upsert({ player_id: playerId, round, hole, strokes, par, updated_at: new Date().toISOString() },
-      { onConflict: 'player_id,round,hole' })
+    .upsert(
+      { player_id: playerId, tournament_id: tournamentId, round, hole, strokes, par, updated_at: new Date().toISOString() },
+      { onConflict: 'tournament_id,player_id,round,hole' }
+    )
     .select()
     .single();
-  return { data, error };
 }
 
 export async function getHolePars() {
-  const { data, error } = await supabase
-    .from('hole_pars')
-    .select('*')
-    .order('hole');
-  return { data, error };
+  return await supabase.from('hole_pars').select('*').order('hole');
 }
 
-// ─── Tournaments ─────────────────────────────────────────────────────────────
-
-export async function getTournaments() {
-  const { data, error } = await supabase
-    .from('tournaments')
-    .select('id, name, sync_url, sync_format, sync_start_date, sync_end_date, sync_enabled')
-    .order('created_at', { ascending: false });
-  return { data, error };
-}
-
-export async function updateTournament(id, updates) {
-  const { data, error } = await supabase
-    .from('tournaments')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single();
-  return { data, error };
-}
-
-// ─── Leaderboard ──────────────────────────────────────────────────────────────
-
-export async function getFantasyLeaderboard() {
-  const { data, error } = await supabase
-    .from('fantasy_leaderboard')
-    .select('*');
-  return { data, error };
-}
-
-// ─── Pricing formula (client-side) ───────────────────────────────────────────
-// Price = (ranking_score * 0.4) + (odds_score * 0.4) + (form_score * 0.2)
-// Ranking score: scale 1-200 → 10-1 (lower rank = higher score)
-// Odds score: scale from decimal odds → 10 (shorter odds = higher score)
+// ─── Pricing formula ──────────────────────────────────────────────────────────
 
 export function calculatePrice(worldRanking, oddsDecimal, formScore) {
   const rankingScore = Math.max(1, 10 - (worldRanking - 1) * (9 / 199));
   const oddsScore = Math.max(1, 10 - Math.log(oddsDecimal) * 2);
   const fs = formScore || 5;
   const raw = rankingScore * 0.4 + oddsScore * 0.4 + fs * 0.2;
-  // Scale to roughly 4–18 range
   return Math.round(raw * 1.8 * 10) / 10;
 }
