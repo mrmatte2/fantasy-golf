@@ -29,14 +29,13 @@ export default function LeaderboardPage() {
   const { user } = useAuth();
   const { tournament } = useTournament(tournamentId);
   const [entries, setEntries] = useState([]);
+  const [completedRounds, setCompletedRounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
 
-  const currentRound = tournament?.current_round || 0;
-
   useEffect(() => {
     if (tournamentId) loadLeaderboard();
-  }, [tournamentId, currentRound]);
+  }, [tournamentId]);
 
   async function loadLeaderboard() {
     setLoading(true);
@@ -48,6 +47,10 @@ export default function LeaderboardPage() {
 
     if (!members) { setLoading(false); return; }
 
+    // Determine rounds purely from score data — no dependency on current_round field
+    const roundsWithScores = [...new Set((scores || []).map(s => s.round))].sort((a, b) => a - b);
+    setCompletedRounds(roundsWithScores);
+
     // Build leaderboard per member
     const board = members.map(member => {
       const userRosters = (rosters || []).filter(r =>
@@ -57,7 +60,7 @@ export default function LeaderboardPage() {
       let totalVsPar = 0;
       const roundBreakdown = [];
 
-      for (let round = 1; round <= currentRound; round++) {
+      for (const round of roundsWithScores) {
         const starterScores = userRosters.map(r => {
           const playerRoundScores = (scores || []).filter(
             s => s.player_id === r.player_id && s.round === round
@@ -78,7 +81,7 @@ export default function LeaderboardPage() {
         userId: member.user_id,
         username: member.profiles?.username,
         teamName: member.team_name,
-        totalVsPar: currentRound > 0 ? totalVsPar : null,
+        totalVsPar: roundsWithScores.length > 0 ? totalVsPar : null,
         roundBreakdown,
         starters: userRosters,
       };
@@ -101,26 +104,30 @@ export default function LeaderboardPage() {
         <h1 className="font-display text-3xl font-bold text-masters-cream">Leaderboard</h1>
         <p className="text-white/40 text-sm mt-1">
           {tournament?.name}
-          {currentRound === 0
+          {completedRounds.length === 0
             ? ' · Tournament hasn\'t started yet'
-            : ` · Round ${currentRound} · Best 4 of 5 starters count`}
+            : ` · Through R${completedRounds[completedRounds.length - 1]} · Best 4 of 5 starters count`}
         </p>
       </div>
 
-      {currentRound > 0 && (
+      {completedRounds.length > 0 && (
         <div className="card-dark mb-6 animate-fade-up-delay-1">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <span className="text-sm text-white/50">{tournament?.name}</span>
             <div className="flex gap-2">
-              {[1,2,3,4].map(r => (
-                <div key={r} className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  r < currentRound ? 'bg-masters-gold/20 text-masters-gold'
-                  : r === currentRound ? 'bg-masters-green/60 text-green-300 border border-green-600/30'
-                  : 'bg-white/5 text-white/20'
-                }`}>
-                  R{r} {r === currentRound ? '▶' : r < currentRound ? '✓' : ''}
-                </div>
-              ))}
+              {[1,2,3,4].map(r => {
+                const done = completedRounds.includes(r);
+                const isLatest = r === completedRounds[completedRounds.length - 1];
+                return (
+                  <div key={r} className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    isLatest ? 'bg-masters-green/60 text-green-300 border border-green-600/30'
+                    : done ? 'bg-masters-gold/20 text-masters-gold'
+                    : 'bg-white/5 text-white/20'
+                  }`}>
+                    R{r} {isLatest ? '▶' : done ? '✓' : ''}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
