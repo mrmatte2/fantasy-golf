@@ -44,7 +44,7 @@ function PgaEventsTab() {
     setInfoForm({ name: event.name, course: event.course || '', year: event.year || '' });
     setSyncForm({
       sync_url: event.sync_url || '',
-      sync_format: event.sync_format || 'masters',
+      sync_format: event.sync_format || 'espn',
       sync_start_date: event.sync_start_date || '',
       sync_end_date: event.sync_end_date || '',
       sync_enabled: event.sync_enabled || false,
@@ -240,6 +240,7 @@ function PgaEventsTab() {
                   <select value={syncForm.sync_format}
                     onChange={e => setSyncForm(f => ({ ...f, sync_format: e.target.value }))}
                     className="input appearance-none w-full">
+                    <option value="espn">ESPN (All PGA Tour events)</option>
                     <option value="masters">Masters (masters.com)</option>
                     <option value="pga_tour">PGA Tour (coming soon)</option>
                   </select>
