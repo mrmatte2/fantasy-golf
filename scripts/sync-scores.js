@@ -89,7 +89,7 @@ const PARSERS = {
    *   { fileEpoch, data: { player: [ { id, full_name, rounds: [ { scores: [strokes…] } ] } ] } }
    *   OR: { player: [...] }
    */
-  async masters(url) {
+  async masters(url, tournamentId) {
     console.log(`Fetching: ${url}`);
 
     const resp = await fetch(url, {
@@ -136,6 +136,7 @@ const PARSERS = {
           const hole = holeIdx + 1;
           if (hole > 18) return;
           upserts.push({
+            tournament_id: tournamentId,
             player_id: playerId,
             round,
             hole,
@@ -158,7 +159,7 @@ const PARSERS = {
       const batch = upserts.slice(i, i + 200);
       const { error } = await supabase
         .from('scores')
-        .upsert(batch, { onConflict: 'player_id,round,hole' });
+        .upsert(batch, { onConflict: 'tournament_id,player_id,round,hole' });
       if (error) throw new Error(`Upsert failed: ${error.message}`);
       totalUpserted += batch.length;
     }
@@ -224,7 +225,7 @@ async function main() {
     }
 
     try {
-      const result = await parser(t.sync_url);
+      const result = await parser(t.sync_url, t.id);
       if (result.playersMatched !== undefined) console.log(`  Players matched : ${result.playersMatched}`);
       if (result.playersCreated)              console.log(`  Players created : ${result.playersCreated}`);
       if (result.scoresUpserted !== undefined) console.log(`  Scores upserted : ${result.scoresUpserted}`);
