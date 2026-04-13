@@ -200,8 +200,8 @@ export default function DraftPage() {
   const budgetPct = (totalSpent / budget) * 100;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="mb-6 animate-fade-up">
+    <div className="max-w-6xl mx-auto px-4 lg:h-[calc(100vh-64px)] lg:overflow-hidden flex flex-col">
+      <div className="py-6 shrink-0 animate-fade-up">
         <h1 className="font-display text-3xl font-bold text-masters-cream">Draft Your Team</h1>
         <p className="text-white/40 text-sm mt-1">
           {membership.team_name} · 5 starters + 3 substitutes · Best 4 of 5 count each round
@@ -209,15 +209,15 @@ export default function DraftPage() {
       </div>
 
       {isLocked && (
-        <div className="mb-6 px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 flex items-center gap-3 text-red-300 text-sm">
+        <div className="mb-2 shrink-0 px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 flex items-center gap-3 text-red-300 text-sm">
           <Lock size={16} className="shrink-0" />
           Rosters are locked — you can view players but cannot make changes.
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 pb-4">
         {/* Roster summary */}
-        <div className="lg:col-span-1 space-y-4 animate-fade-up-delay-1">
+        <div className="lg:col-span-1 lg:overflow-y-auto space-y-4 animate-fade-up-delay-1">
           <div className="card-dark">
             <div className="flex justify-between items-baseline mb-2">
               <span className="text-xs uppercase tracking-wider text-white/40">Budget</span>
@@ -289,8 +289,8 @@ export default function DraftPage() {
         </div>
 
         {/* Player pool */}
-        <div className="lg:col-span-2 animate-fade-up-delay-2">
-          <div className="flex gap-3 mb-4 flex-wrap">
+        <div className="lg:col-span-2 flex flex-col min-h-0 animate-fade-up-delay-2">
+          <div className="flex gap-3 mb-4 flex-wrap shrink-0">
             <div className="flex-1 min-w-48 relative">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
               <input value={search} onChange={e => setSearch(e.target.value)}
@@ -314,7 +314,7 @@ export default function DraftPage() {
             )}
           </div>
 
-          <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
+          <div className="space-y-2 flex-1 overflow-y-auto pr-1 min-h-0">
             {filtered.map(player => (
               <PlayerCard key={player.id} player={player} rosterEntry={rosterMap[player.id]}
                 onAdd={(p) => {
