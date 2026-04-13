@@ -24,13 +24,9 @@ function PgaEventsTab() {
   const [holePars, setHolePars] = useState({});
   const [allPlayers, setAllPlayers] = useState([]);
   const [fieldMap, setFieldMap] = useState({});
-  const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(''); // 'info' | 'sync' | 'pars' | 'field'
   const [savedSection, setSavedSection] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-
-  // Augusta National hole pars
-  const AUGUSTA_PARS = [4, 5, 4, 3, 4, 3, 4, 5, 4, 4, 4, 3, 5, 4, 5, 3, 4, 4];
 
   useEffect(() => {
     loadEvents();
@@ -148,10 +144,15 @@ function PgaEventsTab() {
     return { label: 'Active now', cls: 'bg-green-900/30 text-green-300 border-green-800/40' };
   }
 
-  const filtered = allPlayers.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    (p.country || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const [fieldSearch, setFieldSearch] = useState('');
+  const inField = allPlayers
+    .filter(p => fieldMap[p.id])
+    .filter(p => !fieldSearch || p.name.toLowerCase().includes(fieldSearch.toLowerCase()) || (p.country || '').toLowerCase().includes(fieldSearch.toLowerCase()))
+    .sort((a, b) => (a.world_ranking || 999) - (b.world_ranking || 999));
+  const notInField = allPlayers
+    .filter(p => !fieldMap[p.id])
+    .filter(p => !fieldSearch || p.name.toLowerCase().includes(fieldSearch.toLowerCase()) || (p.country || '').toLowerCase().includes(fieldSearch.toLowerCase()))
+    .sort((a, b) => (a.world_ranking || 999) - (b.world_ranking || 999));
   const inFieldCount = Object.values(fieldMap).filter(Boolean).length;
   const parsEntered = Object.values(holePars).filter(p => p !== '' && p !== undefined).length;
   const parTotal = Object.values(holePars).reduce((s, p) => s + (parseInt(p) || 0), 0);
@@ -270,15 +271,8 @@ function PgaEventsTab() {
 
           {/* Hole Pars */}
           <div className="card-dark">
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4">
               <h3 className="font-display font-semibold text-masters-cream">Hole Pars</h3>
-              <button onClick={() => {
-                const map = {};
-                AUGUSTA_PARS.forEach((par, i) => { map[i + 1] = par; });
-                setHolePars(map);
-              }} className="text-xs text-masters-gold hover:text-masters-gold/70 transition-colors">
-                Pre-fill Augusta
-              </button>
             </div>
             <div className="grid grid-cols-6 sm:grid-cols-9 gap-2 mb-4">
               {Array.from({ length: 18 }, (_, i) => i + 1).map(hole => (
@@ -303,32 +297,79 @@ function PgaEventsTab() {
 
           {/* Field Management */}
           <div className="card-dark">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-display font-semibold text-masters-cream">Field</h3>
-              <span className="text-xs text-white/40">{inFieldCount} players in field</span>
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div>
+                <h3 className="font-display font-semibold text-masters-cream">Field</h3>
+                <p className="text-xs text-white/30 mt-0.5">Click a player to move them between panels</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <input value={fieldSearch} onChange={e => setFieldSearch(e.target.value)}
+                  className="input text-sm py-2 w-44" placeholder="Search…" />
+                <button onClick={saveField} disabled={saving === 'field'} className="btn-primary text-sm flex items-center gap-2">
+                  {saving === 'field' ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+                  {savedSection === 'field' ? 'Saved ✓' : saving === 'field' ? 'Saving…' : 'Save Field'}
+                </button>
+              </div>
             </div>
-            <div className="flex gap-3 mb-3 flex-wrap">
-              <input value={search} onChange={e => setSearch(e.target.value)}
-                className="input flex-1 min-w-40" placeholder="Search players…" />
-              <button onClick={saveField} disabled={saving === 'field'} className="btn-primary text-sm flex items-center gap-2">
-                {saving === 'field' ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
-                {savedSection === 'field' ? 'Saved ✓' : saving === 'field' ? 'Saving…' : 'Save Field'}
-              </button>
-            </div>
-            <div className="space-y-1 max-h-96 overflow-y-auto">
-              {filtered.map(player => (
-                <label key={player.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-                  fieldMap[player.id]
-                    ? 'bg-masters-gold/5 border border-masters-gold/20'
-                    : 'border border-white/5 hover:border-white/10'
-                }`}>
-                  <input type="checkbox" checked={!!fieldMap[player.id]}
-                    onChange={e => setFieldMap(m => ({ ...m, [player.id]: e.target.checked }))}
-                    className="w-4 h-4 accent-masters-gold flex-shrink-0" />
-                  <span className="text-sm text-masters-cream flex-1 truncate">{player.name}</span>
-                  <span className="text-xs text-white/30 shrink-0">#{player.world_ranking} · {player.country}</span>
-                </label>
-              ))}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* In Field */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium uppercase tracking-wider text-green-400">In Field</span>
+                  <span className="text-xs text-white/30">{inFieldCount} players</span>
+                </div>
+                <div className="bg-green-900/10 border border-green-800/30 rounded-xl overflow-hidden flex-1">
+                  <div className="space-y-px max-h-80 overflow-y-auto p-1">
+                    {inField.length === 0 && (
+                      <div className="text-xs text-white/20 text-center py-6 italic">
+                        {fieldSearch ? 'No matches' : 'No players in field'}
+                      </div>
+                    )}
+                    {inField.map(player => (
+                      <button key={player.id}
+                        onClick={() => setFieldMap(m => ({ ...m, [player.id]: false }))}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-red-900/20 hover:border-red-800/30 border border-transparent transition-colors group">
+                        <span className="text-xs text-white/20 w-5 text-right shrink-0">
+                          {player.world_ranking ? `#${player.world_ranking}` : '—'}
+                        </span>
+                        <span className="text-sm text-masters-cream flex-1 truncate">{player.name}</span>
+                        <span className="text-xs text-white/20 shrink-0 group-hover:hidden">{player.country}</span>
+                        <span className="text-xs text-red-400/70 shrink-0 hidden group-hover:inline">remove</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Not in Field */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium uppercase tracking-wider text-white/30">Not in Field</span>
+                  <span className="text-xs text-white/30">{allPlayers.length - inFieldCount} players</span>
+                </div>
+                <div className="bg-black/20 border border-white/8 rounded-xl overflow-hidden flex-1">
+                  <div className="space-y-px max-h-80 overflow-y-auto p-1">
+                    {notInField.length === 0 && (
+                      <div className="text-xs text-white/20 text-center py-6 italic">
+                        {fieldSearch ? 'No matches' : 'All players are in the field'}
+                      </div>
+                    )}
+                    {notInField.map(player => (
+                      <button key={player.id}
+                        onClick={() => setFieldMap(m => ({ ...m, [player.id]: true }))}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-green-900/20 hover:border-green-800/30 border border-transparent transition-colors group">
+                        <span className="text-xs text-white/20 w-5 text-right shrink-0">
+                          {player.world_ranking ? `#${player.world_ranking}` : '—'}
+                        </span>
+                        <span className="text-sm text-white/50 flex-1 truncate">{player.name}</span>
+                        <span className="text-xs text-white/20 shrink-0 group-hover:hidden">{player.country}</span>
+                        <span className="text-xs text-green-400/70 shrink-0 hidden group-hover:inline">add</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
