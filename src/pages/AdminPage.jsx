@@ -3,20 +3,57 @@ import { useAuth } from '../hooks/useAuth';
 import {
   getTournaments, createTournament, updateTournament, deleteTournament,
   getPgaTournaments, createPgaTournament, updatePgaTournament, deletePgaTournament,
-  getPgaField, upsertPgaField, getPgaHolePars, upsertPgaHolePars,
+  getPgaField, upsertPgaField, getPgaHolePars, upsertPgaHolePars, getPgaFieldCounts,
   getAllPlayers, updatePlayer, createPlayer, markAllPlayersMissedCut,
   getAllProfiles, updateProfile,
   getPlayers, getAllScores, upsertScore,
   getTournamentPlayers, upsertTournamentPlayers, getPlayerScores,
 } from '../lib/supabase';
-import { Settings, Lock, Unlock, Edit3, Save, X, RefreshCw, Plus, Trash2, Trophy } from 'lucide-react';
+import { Settings, Lock, Unlock, Edit3, Save, X, RefreshCw, Plus, Trash2, Trophy, ChevronLeft, Users, Calendar } from 'lucide-react';
 
 const TABS = ['PGA Events', 'Tournaments', 'Field Pricing', 'Scores', 'Players', 'Users'];
 
 // ─── PGA Events Tab ───────────────────────────────────────────────────────────
+function formatDateRange(start, end) {
+  if (!start && !end) return null;
+  const fmt = d => {
+    const dt = new Date(d + 'T12:00:00Z');
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+  if (start && end) return `${fmt(start)} – ${fmt(end)}`;
+  if (start) return `From ${fmt(start)}`;
+  return `Until ${fmt(end)}`;
+}
+
+function eventStatus(event) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (!event.sync_enabled) {
+    if (event.sync_start_date && today < event.sync_start_date)
+      return { label: 'Upcoming', cls: 'bg-blue-900/30 text-blue-300 border-blue-800/40' };
+    if (event.sync_end_date && today > event.sync_end_date)
+      return { label: 'Past', cls: 'bg-white/5 text-white/30 border-white/10' };
+    return { label: 'Sync off', cls: 'bg-white/5 text-white/30 border-white/10' };
+  }
+  if (event.sync_start_date && today < event.sync_start_date) {
+    const days = Math.ceil((new Date(event.sync_start_date) - new Date()) / 86400000);
+    return { label: `In ${days}d`, cls: 'bg-yellow-900/30 text-yellow-300 border-yellow-800/40' };
+  }
+  if (event.sync_end_date && today > event.sync_end_date)
+    return { label: 'Ended', cls: 'bg-white/5 text-white/40 border-white/10' };
+  return { label: 'Live', cls: 'bg-green-900/30 text-green-300 border-green-800/40' };
+}
+
+function isPast(event) {
+  const today = new Date().toISOString().slice(0, 10);
+  return event.sync_end_date && today > event.sync_end_date;
+}
+
 function PgaEventsTab() {
   const [events, setEvents] = useState([]);
+  const [fieldCounts, setFieldCounts] = useState({});
+  const [view, setView] = useState('list'); // 'list' | 'detail'
   const [selectedId, setSelectedId] = useState('');
+  const [showPast, setShowPast] = useState(false);
   const [createModal, setCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState({ name: '', course: '', year: new Date().getFullYear() });
   const [infoForm, setInfoForm] = useState({});
@@ -31,6 +68,7 @@ function PgaEventsTab() {
   useEffect(() => {
     loadEvents();
     getAllPlayers().then(({ data }) => setAllPlayers(data || []));
+    getPgaFieldCounts().then(counts => setFieldCounts(counts));
   }, []);
 
   useEffect(() => {
@@ -60,7 +98,11 @@ function PgaEventsTab() {
   async function loadEvents() {
     const { data } = await getPgaTournaments();
     setEvents(data || []);
-    if (!selectedId && data?.length) setSelectedId(data[0].id);
+  }
+
+  function openEvent(id) {
+    setSelectedId(id);
+    setView('detail');
   }
 
   function markSaved(section) {
@@ -78,13 +120,14 @@ function PgaEventsTab() {
     setCreateModal(false);
     setCreateForm({ name: '', course: '', year: new Date().getFullYear() });
     await loadEvents();
-    if (data) setSelectedId(data.id);
+    if (data) openEvent(data.id);
   }
 
   async function handleDelete() {
     await deletePgaTournament(selectedId);
     setDeleteConfirm(false);
     setSelectedId('');
+    setView('list');
     await loadEvents();
   }
 
@@ -158,30 +201,110 @@ function PgaEventsTab() {
   const parTotal = Object.values(holePars).reduce((s, p) => s + (parseInt(p) || 0), 0);
   const syncStatus = getSyncStatus();
 
+  // Sort events by start date ascending (no date = end of list)
+  const sortedEvents = [...events].sort((a, b) => {
+    const da = a.sync_start_date || '9999';
+    const db = b.sync_start_date || '9999';
+    return da.localeCompare(db);
+  });
+  const visibleEvents = showPast ? sortedEvents : sortedEvents.filter(e => !isPast(e));
+  const pastCount = sortedEvents.filter(e => isPast(e)).length;
+
   return (
     <div className="space-y-4">
-      {/* Event selector */}
-      <div className="flex gap-3 items-end flex-wrap">
-        <div className="flex-1 min-w-48">
-          <label className="label">PGA Event</label>
-          <select value={selectedId} onChange={e => setSelectedId(e.target.value)} className="input appearance-none">
-            {events.length === 0 && <option value="">No events yet</option>}
-            {events.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
-        </div>
-        <button onClick={() => setCreateModal(true)} className="btn-secondary flex items-center gap-2 text-sm">
-          <Plus size={14} /> New PGA Event
-        </button>
-        {selectedId && (
-          <button onClick={() => setDeleteConfirm(true)}
-            className="p-2 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-900/20 transition-colors">
-            <Trash2 size={14} />
-          </button>
-        )}
-      </div>
+      {/* ── LIST VIEW ──────────────────────────────────────────────────────── */}
+      {view === 'list' && (
+        <>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-masters-cream">PGA Events</h2>
+              <p className="text-xs text-white/30 mt-0.5">{events.length} events total · {pastCount} past</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {pastCount > 0 && (
+                <button onClick={() => setShowPast(p => !p)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                    showPast
+                      ? 'bg-white/10 text-white/60 border-white/20'
+                      : 'bg-white/5 text-white/30 border-white/10 hover:border-white/20'
+                  }`}>
+                  {showPast ? 'Hide past' : `Show ${pastCount} past`}
+                </button>
+              )}
+              <button onClick={() => setCreateModal(true)} className="btn-secondary flex items-center gap-2 text-sm">
+                <Plus size={14} /> New PGA Event
+              </button>
+            </div>
+          </div>
 
-      {selectedId && (
-        <div className="space-y-4">
+          <div className="space-y-2">
+            {visibleEvents.map(event => {
+              const status = eventStatus(event);
+              const fieldCount = fieldCounts[event.id] || 0;
+              const dateStr = formatDateRange(event.sync_start_date, event.sync_end_date);
+              const past = isPast(event);
+              return (
+                <button key={event.id} onClick={() => openEvent(event.id)}
+                  className={`w-full text-left rounded-xl border transition-all p-4 group ${
+                    past
+                      ? 'border-white/5 bg-black/10 hover:border-white/10'
+                      : 'border-white/10 bg-white/3 hover:border-masters-gold/30 hover:bg-masters-gold/3'
+                  }`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`font-display font-semibold truncate ${past ? 'text-white/40' : 'text-masters-cream'}`}>
+                          {event.name}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${status.cls}`}>
+                          {status.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                        {event.course && (
+                          <span className="text-xs text-white/30">{event.course}</span>
+                        )}
+                        {dateStr && (
+                          <span className="flex items-center gap-1 text-xs text-white/25">
+                            <Calendar size={10} />
+                            {dateStr}
+                          </span>
+                        )}
+                        <span className={`flex items-center gap-1 text-xs ${fieldCount > 0 ? 'text-green-400/70' : 'text-white/20'}`}>
+                          <Users size={10} />
+                          {fieldCount > 0 ? `${fieldCount} in field` : 'No field yet'}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-white/20 group-hover:text-white/40 transition-colors shrink-0 mt-0.5">›</span>
+                  </div>
+                </button>
+              );
+            })}
+            {visibleEvents.length === 0 && (
+              <div className="card-dark text-center py-10 text-white/30 text-sm">
+                No events yet. Click "New PGA Event" to add one.
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── DETAIL VIEW ────────────────────────────────────────────────────── */}
+      {view === 'detail' && selectedId && (
+        <>
+          <div className="flex items-center justify-between">
+            <button onClick={() => setView('list')}
+              className="flex items-center gap-1.5 text-sm text-white/40 hover:text-masters-cream transition-colors">
+              <ChevronLeft size={16} /> All Events
+            </button>
+            <button onClick={() => setDeleteConfirm(true)}
+              className="p-2 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-900/20 transition-colors">
+              <Trash2 size={14} />
+            </button>
+          </div>
+
+          <div className="space-y-4">
           {/* Basic Info */}
           <div className="card-dark">
             <h3 className="font-display font-semibold text-masters-cream mb-4">Basic Info</h3>
@@ -373,6 +496,7 @@ function PgaEventsTab() {
             </div>
           </div>
         </div>
+        </>
       )}
 
       {/* Create modal */}

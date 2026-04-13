@@ -66,6 +66,18 @@ export async function deletePgaTournament(id) {
   return await supabase.from('pga_tournaments').delete().eq('id', id);
 }
 
+export async function getPgaFieldCounts() {
+  const { data } = await supabase
+    .from('pga_tournament_players')
+    .select('pga_tournament_id')
+    .eq('is_in_field', true);
+  const counts = {};
+  for (const row of data || []) {
+    counts[row.pga_tournament_id] = (counts[row.pga_tournament_id] || 0) + 1;
+  }
+  return counts;
+}
+
 // ─── PGA Tournament Field (which players are in the PGA field) ────────────────
 
 export async function getPgaField(pgaTournamentId) {
