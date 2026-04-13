@@ -49,6 +49,10 @@ body::before {
     @apply rounded-xl border border-white/5 bg-black/30 backdrop-blur-sm p-6;
   }
 
+  .card-modal {
+    @apply rounded-xl border border-white/15 bg-masters-dark p-6;
+  }
+
   .btn-primary {
     @apply px-5 py-2.5 rounded-lg font-body font-medium text-sm
            bg-masters-gold text-masters-dark

@@ -337,7 +337,7 @@ function PgaEventsTab() {
       {createModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
           onClick={() => setCreateModal(false)}>
-          <div className="card max-w-md w-full" onClick={e => e.stopPropagation()}>
+          <div className="card-modal max-w-md w-full" onClick={e => e.stopPropagation()}>
             <h3 className="font-display font-bold text-masters-cream mb-5">New PGA Event</h3>
             <div className="space-y-3">
               <div>
@@ -370,7 +370,7 @@ function PgaEventsTab() {
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
           onClick={() => setDeleteConfirm(false)}>
-          <div className="card max-w-sm w-full" onClick={e => e.stopPropagation()}>
+          <div className="card-modal max-w-sm w-full" onClick={e => e.stopPropagation()}>
             <h3 className="font-display font-bold text-masters-cream mb-2">Delete PGA Event?</h3>
             <p className="text-white/40 text-sm mb-5">
               This will permanently delete <strong className="text-white/70">{events.find(e => e.id === selectedId)?.name}</strong> and all associated scores. This cannot be undone.
@@ -515,7 +515,7 @@ function TournamentsTab({ currentUserId }) {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
           onClick={() => setModal(null)}>
-          <div className="card max-w-md w-full" onClick={e => e.stopPropagation()}>
+          <div className="card-modal max-w-md w-full" onClick={e => e.stopPropagation()}>
             <h3 className="font-display font-bold text-masters-cream mb-5">
               {modal === 'create' ? 'New Tournament' : `Edit: ${modal.name}`}
             </h3>
@@ -571,7 +571,7 @@ function TournamentsTab({ currentUserId }) {
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
           onClick={() => setDeleteConfirm(null)}>
-          <div className="card max-w-sm w-full" onClick={e => e.stopPropagation()}>
+          <div className="card-modal max-w-sm w-full" onClick={e => e.stopPropagation()}>
             <h3 className="font-display font-bold text-masters-cream mb-2">Delete Tournament?</h3>
             <p className="text-white/40 text-sm mb-5">
               This will permanently delete <strong className="text-white/70">{deleteConfirm.name}</strong> and all its rosters. This cannot be undone.
@@ -874,24 +874,35 @@ function ScoresTab() {
 }
 
 // ─── Players Tab ──────────────────────────────────────────────────────────────
+const PLAYERS_PAGE_SIZE = 50;
+
 function PlayersTab() {
   const [players, setPlayers] = useState([]);
-  const [editing, setEditing] = useState(null);
+  const [editModal, setEditModal] = useState(null); // null or player object
   const [editForm, setEditForm] = useState({});
   const [addModal, setAddModal] = useState(false);
   const [newForm, setNewForm] = useState({ name: '', country: '', world_ranking: '', odds_fractional: '', odds_decimal: '', form_score: 5, price: '' });
   const [saving, setSaving] = useState(false);
   const [cutMode, setCutMode] = useState(false);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
 
   useEffect(() => { load(); }, []);
+  useEffect(() => { setPage(1); }, [search]);
 
   async function load() {
     const { data } = await getAllPlayers();
     setPlayers(data || []);
   }
 
+  const filtered = players.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PLAYERS_PAGE_SIZE));
+  const paged = filtered.slice((page - 1) * PLAYERS_PAGE_SIZE, page * PLAYERS_PAGE_SIZE);
+
   function startEdit(player) {
-    setEditing(player.id);
+    setEditModal(player);
     setEditForm({
       price_override: player.price_override ?? '',
       price: player.price ?? '',
@@ -904,7 +915,8 @@ function PlayersTab() {
     });
   }
 
-  async function saveEdit(player) {
+  async function saveEdit() {
+    const player = editModal;
     setSaving(true);
     await updatePlayer(player.id, {
       price_override: editForm.price_override !== '' ? parseFloat(editForm.price_override) : null,
@@ -917,7 +929,7 @@ function PlayersTab() {
       world_ranking: editForm.world_ranking !== '' ? parseInt(editForm.world_ranking) : player.world_ranking,
     });
     await load();
-    setEditing(null);
+    setEditModal(null);
     setSaving(false);
   }
 
@@ -953,24 +965,35 @@ function PlayersTab() {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <p className="text-xs text-white/40">Global player list — update odds and rankings before each event.</p>
-        <div className="flex gap-2">
-          <button onClick={() => setCutMode(!cutMode)}
-            className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border transition-colors ${
-              cutMode ? 'bg-masters-gold/20 text-masters-gold border-masters-gold/40' : 'btn-secondary'
-            }`}>
-            {cutMode ? 'Exit Cut Mode' : 'Manage Cut'}
+    <div>
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <input
+          type="search"
+          placeholder="Search players…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="input flex-1 min-w-48"
+        />
+        <button onClick={() => setCutMode(!cutMode)}
+          className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border transition-colors shrink-0 ${
+            cutMode ? 'bg-masters-gold/20 text-masters-gold border-masters-gold/40' : 'btn-secondary'
+          }`}>
+          {cutMode ? 'Exit Cut Mode' : 'Manage Cut'}
+        </button>
+        {!cutMode && (
+          <button onClick={() => setAddModal(true)} className="btn-secondary flex items-center gap-2 text-sm shrink-0">
+            <Plus size={14} /> Add Player
           </button>
-          {!cutMode && (
-            <button onClick={() => setAddModal(true)} className="btn-secondary flex items-center gap-2 text-sm">
-              <Plus size={14} /> Add Player
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
+      <p className="text-xs text-white/30 mb-3">
+        {filtered.length} player{filtered.length !== 1 ? 's' : ''}
+        {search && ` matching "${search}"`}
+      </p>
+
+      {/* Cut mode — unchanged grid */}
       {cutMode ? (
         <div className="card-dark border-masters-gold/20">
           <div className="flex items-start justify-between gap-4 mb-4">
@@ -985,7 +1008,7 @@ function PlayersTab() {
             </button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {players.filter(p => p.is_active && !p.is_withdrawn).map(player => (
+            {filtered.filter(p => p.is_active && !p.is_withdrawn).map(player => (
               <button key={player.id} onClick={() => toggleCut(player)}
                 className={`text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
                   player.made_cut
@@ -1000,147 +1023,183 @@ function PlayersTab() {
         </div>
       ) : (
         <>
-          {players.map(player => (
-            <div key={player.id} className={`card-dark ${!player.is_active ? 'opacity-50' : ''}`}>
-              {editing === player.id ? (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="font-display font-semibold text-masters-cream">{player.name}</span>
-                    <div className="flex gap-2">
-                      <button onClick={() => saveEdit(player)} disabled={saving} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
-                        <Save size={12} /> Save
-                      </button>
-                      <button onClick={() => setEditing(null)} className="btn-secondary text-xs px-3 py-1.5"><X size={12} /></button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div>
-                      <label className="label">Base Price</label>
-                      <input type="number" step="0.5" value={editForm.price}
-                        onChange={e => setEditForm(f => ({ ...f, price: e.target.value }))} className="input" />
-                    </div>
-                    <div>
-                      <label className="label">Price Override</label>
-                      <input type="number" step="0.5" value={editForm.price_override}
-                        onChange={e => setEditForm(f => ({ ...f, price_override: e.target.value }))}
-                        className="input" placeholder="blank = use base" />
-                    </div>
-                    <div>
-                      <label className="label">Form (0-10)</label>
-                      <input type="number" step="0.1" min="0" max="10" value={editForm.form_score}
-                        onChange={e => setEditForm(f => ({ ...f, form_score: e.target.value }))} className="input" />
-                    </div>
-                    <div>
-                      <label className="label">World Ranking</label>
-                      <input type="number" value={editForm.world_ranking}
-                        onChange={e => setEditForm(f => ({ ...f, world_ranking: e.target.value }))} className="input" />
-                    </div>
-                    <div>
-                      <label className="label">Odds</label>
-                      <input type="text" value={editForm.odds_fractional}
-                        onChange={e => setEditForm(f => ({ ...f, odds_fractional: e.target.value }))}
-                        className="input" placeholder="e.g. 12/1" />
-                    </div>
-                  </div>
-                  <div className="flex gap-4 mt-3 flex-wrap">
-                    <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
-                      <input type="checkbox" checked={editForm.is_active}
-                        onChange={e => setEditForm(f => ({ ...f, is_active: e.target.checked }))} />
-                      Active
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
-                      <input type="checkbox" checked={editForm.is_withdrawn}
-                        onChange={e => setEditForm(f => ({ ...f, is_withdrawn: e.target.checked }))} />
-                      Withdrawn (WD)
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
-                      <input type="checkbox" checked={!editForm.made_cut}
-                        onChange={e => setEditForm(f => ({ ...f, made_cut: !e.target.checked }))} />
-                      Missed Cut
-                    </label>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-masters-cream text-sm">{player.name}</span>
-                      {!player.is_active && <span className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-white/40">Inactive</span>}
-                      {player.is_withdrawn && <span className="badge-wd">WD</span>}
-                      {!player.made_cut && <span className="badge-cut">CUT</span>}
-                    </div>
-                    <div className="text-xs text-white/30 mt-0.5">
-                      #{player.world_ranking} · {player.odds_fractional} · Form: {player.form_score}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
+          {/* Compact table */}
+          <div className="rounded-xl border border-white/8 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/8 bg-white/3">
+                  <th className="text-left px-4 py-2.5 text-xs text-white/40 font-medium">Player</th>
+                  <th className="text-center px-3 py-2.5 text-xs text-white/40 font-medium hidden sm:table-cell">WR</th>
+                  <th className="text-left px-3 py-2.5 text-xs text-white/40 font-medium hidden sm:table-cell">Odds</th>
+                  <th className="text-right px-3 py-2.5 text-xs text-white/40 font-medium">Price</th>
+                  <th className="px-3 py-2.5 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.map(player => (
+                  <tr key={player.id}
+                    className={`border-b border-white/5 hover:bg-white/3 transition-colors ${!player.is_active ? 'opacity-40' : ''}`}>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-masters-cream font-medium">{player.name}</span>
+                        {player.is_withdrawn && <span className="badge-wd">WD</span>}
+                        {!player.made_cut && <span className="badge-cut">CUT</span>}
+                        {!player.is_active && <span className="text-xs text-white/30 italic">inactive</span>}
+                      </div>
+                      <div className="text-xs text-white/30 sm:hidden mt-0.5">
+                        #{player.world_ranking} · {player.odds_fractional}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-center text-white/40 font-mono text-xs hidden sm:table-cell">
+                      {player.world_ranking ? `#${player.world_ranking}` : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-white/40 text-xs hidden sm:table-cell">
+                      {player.odds_fractional || '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
                       <div className="font-mono text-sm text-masters-gold">
-                        £{(player.price_override ?? player.price)?.toFixed(1)}
+                        £{(player.price_override ?? player.price)?.toFixed(1) ?? '—'}
                       </div>
                       {player.price_override && (
-                        <div className="text-xs text-white/30 line-through">£{player.price?.toFixed(1)}</div>
+                        <div className="text-xs text-white/25 line-through">£{player.price?.toFixed(1)}</div>
                       )}
-                    </div>
-                    <button onClick={() => startEdit(player)}
-                      className="p-2 rounded-lg text-white/30 hover:text-masters-gold hover:bg-masters-gold/10 transition-colors">
-                      <Edit3 size={14} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <button onClick={() => startEdit(player)}
+                        className="p-1.5 rounded text-white/30 hover:text-masters-gold hover:bg-masters-gold/10 transition-colors">
+                        <Edit3 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-          {/* Add player modal */}
-          {addModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
-              onClick={() => setAddModal(false)}>
-              <div className="card max-w-md w-full" onClick={e => e.stopPropagation()}>
-                <h3 className="font-display font-bold text-masters-cream mb-5">Add Player</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <label className="label">Name *</label>
-                    <input value={newForm.name} onChange={e => setNewForm(f => ({ ...f, name: e.target.value }))}
-                      className="input" placeholder="Full name" />
-                  </div>
-                  <div>
-                    <label className="label">Country</label>
-                    <input value={newForm.country} onChange={e => setNewForm(f => ({ ...f, country: e.target.value }))}
-                      className="input" placeholder="e.g. USA" />
-                  </div>
-                  <div>
-                    <label className="label">World Ranking</label>
-                    <input type="number" value={newForm.world_ranking}
-                      onChange={e => setNewForm(f => ({ ...f, world_ranking: e.target.value }))} className="input" />
-                  </div>
-                  <div>
-                    <label className="label">Odds (e.g. 12/1)</label>
-                    <input value={newForm.odds_fractional}
-                      onChange={e => setNewForm(f => ({ ...f, odds_fractional: e.target.value }))} className="input" />
-                  </div>
-                  <div>
-                    <label className="label">Price (£)</label>
-                    <input type="number" step="0.5" value={newForm.price}
-                      onChange={e => setNewForm(f => ({ ...f, price: e.target.value }))} className="input" />
-                  </div>
-                  <div>
-                    <label className="label">Form (0-10)</label>
-                    <input type="number" step="0.1" min="0" max="10" value={newForm.form_score}
-                      onChange={e => setNewForm(f => ({ ...f, form_score: e.target.value }))} className="input" />
-                  </div>
-                </div>
-                <div className="flex gap-3 mt-5">
-                  <button onClick={handleAdd} disabled={saving || !newForm.name.trim()} className="btn-primary flex-1 flex items-center justify-center gap-2">
-                    {saving ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-                    Add Player
-                  </button>
-                  <button onClick={() => setAddModal(false)} className="btn-secondary flex-1">Cancel</button>
-                </div>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-3 text-xs text-white/40">
+              <span>Page {page} of {totalPages}</span>
+              <div className="flex gap-2">
+                <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
+                  className="btn-secondary px-3 py-1 text-xs disabled:opacity-30">← Prev</button>
+                <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)}
+                  className="btn-secondary px-3 py-1 text-xs disabled:opacity-30">Next →</button>
               </div>
             </div>
           )}
         </>
+      )}
+
+      {/* Edit player modal */}
+      {editModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          onClick={() => setEditModal(null)}>
+          <div className="card-modal max-w-md w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="font-display font-bold text-masters-cream mb-5">Edit: {editModal.name}</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Base Price</label>
+                <input type="number" step="0.5" value={editForm.price}
+                  onChange={e => setEditForm(f => ({ ...f, price: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="label">Price Override</label>
+                <input type="number" step="0.5" value={editForm.price_override}
+                  onChange={e => setEditForm(f => ({ ...f, price_override: e.target.value }))}
+                  className="input" placeholder="blank = use base" />
+              </div>
+              <div>
+                <label className="label">World Ranking</label>
+                <input type="number" value={editForm.world_ranking}
+                  onChange={e => setEditForm(f => ({ ...f, world_ranking: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="label">Odds (e.g. 12/1)</label>
+                <input type="text" value={editForm.odds_fractional}
+                  onChange={e => setEditForm(f => ({ ...f, odds_fractional: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="label">Form (0-10)</label>
+                <input type="number" step="0.1" min="0" max="10" value={editForm.form_score}
+                  onChange={e => setEditForm(f => ({ ...f, form_score: e.target.value }))} className="input" />
+              </div>
+            </div>
+            <div className="flex gap-4 mt-4 flex-wrap">
+              <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
+                <input type="checkbox" checked={editForm.is_active}
+                  onChange={e => setEditForm(f => ({ ...f, is_active: e.target.checked }))} />
+                Active
+              </label>
+              <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
+                <input type="checkbox" checked={editForm.is_withdrawn}
+                  onChange={e => setEditForm(f => ({ ...f, is_withdrawn: e.target.checked }))} />
+                Withdrawn (WD)
+              </label>
+              <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
+                <input type="checkbox" checked={!editForm.made_cut}
+                  onChange={e => setEditForm(f => ({ ...f, made_cut: !e.target.checked }))} />
+                Missed Cut
+              </label>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={saveEdit} disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                Save
+              </button>
+              <button onClick={() => setEditModal(null)} className="btn-secondary flex-1">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add player modal */}
+      {addModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          onClick={() => setAddModal(false)}>
+          <div className="card-modal max-w-md w-full" onClick={e => e.stopPropagation()}>
+            <h3 className="font-display font-bold text-masters-cream mb-5">Add Player</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="label">Name *</label>
+                <input value={newForm.name} onChange={e => setNewForm(f => ({ ...f, name: e.target.value }))}
+                  className="input" placeholder="Full name" autoFocus />
+              </div>
+              <div>
+                <label className="label">Country</label>
+                <input value={newForm.country} onChange={e => setNewForm(f => ({ ...f, country: e.target.value }))}
+                  className="input" placeholder="e.g. USA" />
+              </div>
+              <div>
+                <label className="label">World Ranking</label>
+                <input type="number" value={newForm.world_ranking}
+                  onChange={e => setNewForm(f => ({ ...f, world_ranking: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="label">Odds (e.g. 12/1)</label>
+                <input value={newForm.odds_fractional}
+                  onChange={e => setNewForm(f => ({ ...f, odds_fractional: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="label">Price (£)</label>
+                <input type="number" step="0.5" value={newForm.price}
+                  onChange={e => setNewForm(f => ({ ...f, price: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="label">Form (0-10)</label>
+                <input type="number" step="0.1" min="0" max="10" value={newForm.form_score}
+                  onChange={e => setNewForm(f => ({ ...f, form_score: e.target.value }))} className="input" />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={handleAdd} disabled={saving || !newForm.name.trim()} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                {saving ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+                Add Player
+              </button>
+              <button onClick={() => setAddModal(false)} className="btn-secondary flex-1">Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
