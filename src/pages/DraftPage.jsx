@@ -247,11 +247,18 @@ export default function DraftPage() {
             <div className="space-y-2">
               {starters.map((r, i) => (
                 <div key={r.id} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-masters-gold/20 text-masters-gold text-xs flex items-center justify-center font-mono">{i + 1}</span>
-                    <span className="text-sm text-masters-cream">{r.players?.name}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-5 h-5 rounded-full bg-masters-gold/20 text-masters-gold text-xs flex items-center justify-center font-mono shrink-0">{i + 1}</span>
+                    <span className="text-sm text-masters-cream truncate">{r.players?.name}</span>
                   </div>
-                  <PriceTag price={r.players?.price} />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <PriceTag price={r.players?.price} />
+                    {!isLocked && (
+                      <button onClick={() => handleRemove(r.players)}
+                        className="text-white/25 hover:text-red-400 transition-colors text-lg leading-none"
+                        title="Remove">×</button>
+                    )}
+                  </div>
                 </div>
               ))}
               {Array.from({ length: MAX_STARTERS - starters.length }).map((_, i) => (
@@ -270,11 +277,18 @@ export default function DraftPage() {
             <div className="space-y-2">
               {subs.map((r, i) => (
                 <div key={r.id} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-white/10 text-white/50 text-xs flex items-center justify-center font-mono">S{i + 1}</span>
-                    <span className="text-sm text-masters-cream">{r.players?.name}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-5 h-5 rounded-full bg-white/10 text-white/50 text-xs flex items-center justify-center font-mono shrink-0">S{i + 1}</span>
+                    <span className="text-sm text-masters-cream truncate">{r.players?.name}</span>
                   </div>
-                  <PriceTag price={r.players?.price} />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <PriceTag price={r.players?.price} />
+                    {!isLocked && (
+                      <button onClick={() => handleRemove(r.players)}
+                        className="text-white/25 hover:text-red-400 transition-colors text-lg leading-none"
+                        title="Remove">×</button>
+                    )}
+                  </div>
                 </div>
               ))}
               {Array.from({ length: MAX_SUBS - subs.length }).map((_, i) => (
