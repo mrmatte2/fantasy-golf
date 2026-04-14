@@ -255,50 +255,56 @@ export default function LeaderboardPage() {
                   <div className="px-4 pb-4 border-t border-white/5">
                     {/* If viewing a specific round, show just that round detail */}
                     {selectedRound !== null && selectedRb ? (
-                      <div className="mt-4">
-                        <div className="text-xs text-white/30 uppercase tracking-wider mb-2 flex items-center gap-2">
-                          <span>Round {selectedRb.round}</span>
+                      <div className="mt-3 rounded-lg border border-white/8 overflow-hidden">
+                        <div className="flex items-center gap-2 px-3 py-2 bg-white/5 border-b border-white/8">
+                          <span className="text-xs font-semibold text-white/70 tracking-wide">Round {selectedRb.round}</span>
                           {selectedRb.isLocked
-                            ? <span className="text-green-600/60">✓ locked</span>
-                            : <span className="text-white/20">• in progress</span>
+                            ? <span className="text-xs text-green-500/50">✓ locked</span>
+                            : <span className="text-xs text-white/20">· in progress</span>
                           }
                           {selectedRb.isLocked && (
-                            <span className={`ml-auto font-mono text-sm ${vsParClass(selectedRb.roundVsPar)}`}>
+                            <span className={`ml-auto font-mono text-sm font-bold ${vsParClass(selectedRb.roundVsPar)}`}>
                               {formatVsPar(selectedRb.roundVsPar)}
                             </span>
                           )}
                         </div>
-                        {!selectedRb.isLocked ? (
-                          <div className="text-xs text-white/20 italic px-1">
-                            Roster hidden until first scores arrive
-                          </div>
-                        ) : (
-                          <RoundPlayerList rb={selectedRb} />
-                        )}
+                        <div className="px-3 py-2">
+                          {!selectedRb.isLocked ? (
+                            <div className="text-xs text-white/20 italic py-1">
+                              Roster hidden until first scores arrive
+                            </div>
+                          ) : (
+                            <RoundPlayerList rb={selectedRb} />
+                          )}
+                        </div>
                       </div>
                     ) : (
                       /* Total view: show all rounds */
                       entry.roundBreakdown.map(rb => (
-                        <div key={rb.round} className="mt-4">
-                          <div className="text-xs text-white/30 uppercase tracking-wider mb-2 flex items-center gap-2">
-                            <span>Round {rb.round}</span>
+                        <div key={rb.round} className="mt-3 rounded-lg border border-white/8 overflow-hidden">
+                          {/* Round header bar */}
+                          <div className="flex items-center gap-2 px-3 py-2 bg-white/5 border-b border-white/8">
+                            <span className="text-xs font-semibold text-white/70 tracking-wide">Round {rb.round}</span>
                             {rb.isLocked
-                              ? <span className="text-green-600/60">✓ locked</span>
-                              : <span className="text-white/20">• in progress</span>
+                              ? <span className="text-xs text-green-500/50">✓ locked</span>
+                              : <span className="text-xs text-white/20">· in progress</span>
                             }
                             {rb.isLocked && (
-                              <span className={`ml-auto font-mono text-sm ${vsParClass(rb.roundVsPar)}`}>
+                              <span className={`ml-auto font-mono text-sm font-bold ${vsParClass(rb.roundVsPar)}`}>
                                 {formatVsPar(rb.roundVsPar)}
                               </span>
                             )}
                           </div>
-                          {!rb.isLocked ? (
-                            <div className="text-xs text-white/20 italic px-1">
-                              Roster hidden until first scores arrive
-                            </div>
-                          ) : (
-                            <RoundPlayerList rb={rb} />
-                          )}
+                          {/* Round content */}
+                          <div className="px-3 py-2">
+                            {!rb.isLocked ? (
+                              <div className="text-xs text-white/20 italic py-1">
+                                Roster hidden until first scores arrive
+                              </div>
+                            ) : (
+                              <RoundPlayerList rb={rb} />
+                            )}
+                          </div>
                         </div>
                       ))
                     )}
