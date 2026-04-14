@@ -383,7 +383,7 @@ export async function getScoresForPlayers(pgaTournamentId, playerIds) {
     [1, 2, 3, 4].map(round =>
       supabase
         .from('scores')
-        .select('player_id, round, vs_par')
+        .select('player_id, round, hole, strokes, vs_par')
         .eq('pga_tournament_id', pgaTournamentId)
         .eq('round', round)
         .in('player_id', playerIds)

@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTournament } from '../hooks/useTournament';
-import { getAllRosters, getTournament, getTournamentMembers, getRoundSnapshots, getScoresForPlayers } from '../lib/supabase';
-import { Trophy, Medal, Star } from 'lucide-react';
+import { getAllRosters, getTournament, getTournamentMembers, getRoundSnapshots, getScoresForPlayers, getHolePars } from '../lib/supabase';
+import { Trophy, Medal, Star, ChevronRight } from 'lucide-react';
 
 function formatVsPar(vp) {
   if (vp === null || vp === undefined) return '—';
@@ -28,8 +28,9 @@ export default function LeaderboardPage() {
   const { id: tournamentId } = useParams();
   const { user } = useAuth();
   const { tournament } = useTournament(tournamentId);
-  const [allEntries, setAllEntries] = useState([]); // full data for all rounds
+  const [allEntries, setAllEntries] = useState([]);
   const [completedRounds, setCompletedRounds] = useState([]);
+  const [pars, setPars] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [selectedRound, setSelectedRound] = useState(null); // null = total view
@@ -58,14 +59,15 @@ export default function LeaderboardPage() {
 
     if (!members) { setLoading(false); return; }
 
-    // Collect every player ID across snapshots + active rosters, then fetch
-    // their scores per round. This avoids Supabase's 1000-row server cap that
-    // would silently truncate when loading all players' scores at once.
     const rosterPlayerIds = [...new Set([
       ...(snapshots || []).map(s => s.player_id),
       ...(rosters || []).filter(r => r.is_active).map(r => r.player_id),
     ])];
-    const scores = await getScoresForPlayers(pgaId, rosterPlayerIds);
+    const [scores, { data: parsData }] = await Promise.all([
+      getScoresForPlayers(pgaId, rosterPlayerIds),
+      getHolePars(pgaId),
+    ]);
+    setPars(parsData || []);
 
     const roundsWithScores = [...new Set((scores || []).map(s => s.round))].sort((a, b) => a - b);
     setCompletedRounds(roundsWithScores);
@@ -93,19 +95,17 @@ export default function LeaderboardPage() {
           ? startersForRound
           : (rosters || []).filter(r => r.user_id === member.user_id && r.slot_type === 'starter' && r.is_active);
 
-        const starterScores = effectiveStarters.map(r => {
+        const toPlayerScore = r => {
           const player = r.players;
-          const playerRoundScores = (scores || []).filter(s => s.player_id === r.player_id && s.round === round);
+          const playerRoundScores = (scores || [])
+            .filter(s => s.player_id === r.player_id && s.round === round)
+            .sort((a, b) => a.hole - b.hole);
           const roundTotal = playerRoundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
-          return { playerName: player?.name, playerId: r.player_id, roundTotal, holesPlayed: playerRoundScores.length };
-        });
+          return { playerName: player?.name, playerId: r.player_id, roundTotal, holesPlayed: playerRoundScores.length, holeScores: playerRoundScores };
+        };
 
-        const subScores = subsForRound.map(r => {
-          const player = r.players;
-          const playerRoundScores = (scores || []).filter(s => s.player_id === r.player_id && s.round === round);
-          const roundTotal = playerRoundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
-          return { playerName: player?.name, playerId: r.player_id, roundTotal, holesPlayed: playerRoundScores.length };
-        });
+        const starterScores = effectiveStarters.map(toPlayerScore);
+        const subScores = subsForRound.map(toPlayerScore);
 
         const scored = starterScores.filter(s => s.holesPlayed > 0).sort((a, b) => a.roundTotal - b.roundTotal);
         const best4 = scored.slice(0, 4);
@@ -274,7 +274,7 @@ export default function LeaderboardPage() {
                               Roster hidden until first scores arrive
                             </div>
                           ) : (
-                            <RoundPlayerList rb={selectedRb} />
+                            <RoundPlayerList rb={selectedRb} pars={pars} />
                           )}
                         </div>
                       </div>
@@ -302,7 +302,7 @@ export default function LeaderboardPage() {
                                 Roster hidden until first scores arrive
                               </div>
                             ) : (
-                              <RoundPlayerList rb={rb} />
+                              <RoundPlayerList rb={rb} pars={pars} />
                             )}
                           </div>
                         </div>
@@ -319,27 +319,78 @@ export default function LeaderboardPage() {
   );
 }
 
-function RoundPlayerList({ rb }) {
+function HoleGrid({ holeScores, pars }) {
+  const scoreMap = Object.fromEntries((holeScores || []).map(s => [s.hole, s]));
+  const parMap = Object.fromEntries((pars || []).map(p => [p.hole, p.par]));
+  const holes = Array.from({ length: 18 }, (_, i) => i + 1);
+  return (
+    <div className="overflow-x-auto mt-1 mb-2">
+      <table className="text-xs w-full min-w-max">
+        <thead>
+          <tr className="text-white/20">
+            <td className="py-0.5 pr-2 text-left">Hole</td>
+            {holes.map(h => <td key={h} className="py-0.5 px-0.5 text-center w-6">{h}</td>)}
+          </tr>
+          <tr className="text-white/15">
+            <td className="py-0.5 pr-2 text-left">Par</td>
+            {holes.map(h => <td key={h} className="py-0.5 px-0.5 text-center">{parMap[h] ?? 4}</td>)}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="py-0.5 pr-2 text-white/30">Score</td>
+            {holes.map(h => {
+              const s = scoreMap[h];
+              return (
+                <td key={h} className={`py-0.5 px-0.5 text-center font-mono ${s ? vsParClass(s.vs_par) : 'text-white/15'}`}>
+                  {s ? formatVsPar(s.vs_par) : '·'}
+                </td>
+              );
+            })}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PlayerScoreRow({ ss, isCounting, isSub, pars }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasHoles = ss.holeScores?.length > 0;
+  return (
+    <div>
+      <button
+        onClick={() => hasHoles && setExpanded(e => !e)}
+        className={`w-full flex items-center justify-between text-xs py-0.5 transition-colors ${
+          isSub ? 'text-white/25' : isCounting ? 'text-masters-cream' : 'text-white/30'
+        } ${hasHoles ? 'hover:text-white/60 cursor-pointer' : 'cursor-default'}`}
+      >
+        <span className="flex items-center gap-1">
+          {!isSub && isCounting && <Star size={9} className="text-masters-gold fill-masters-gold shrink-0" />}
+          {ss.playerName}
+          {hasHoles && (
+            <ChevronRight size={9} className={`shrink-0 opacity-40 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          )}
+        </span>
+        <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
+          {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
+        </span>
+      </button>
+      {expanded && hasHoles && <HoleGrid holeScores={ss.holeScores} pars={pars} />}
+    </div>
+  );
+}
+
+function RoundPlayerList({ rb, pars }) {
   return (
     <div>
       <div className="space-y-0.5">
         <div className="text-xs text-white/20 uppercase tracking-wider mb-1">Starters</div>
-        {rb.starterScores.map(ss => {
-          const isCounting = rb.best4.some(b => b.playerId === ss.playerId);
-          return (
-            <div key={ss.playerId} className={`flex items-center justify-between text-xs py-0.5 ${
-              isCounting ? 'text-masters-cream' : 'text-white/30'
-            }`}>
-              <span className="flex items-center gap-1">
-                {isCounting && <Star size={9} className="text-masters-gold fill-masters-gold" />}
-                {ss.playerName}
-              </span>
-              <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
-                {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
-              </span>
-            </div>
-          );
-        })}
+        {rb.starterScores.map(ss => (
+          <PlayerScoreRow key={ss.playerId} ss={ss}
+            isCounting={rb.best4.some(b => b.playerId === ss.playerId)}
+            isSub={false} pars={pars} />
+        ))}
       </div>
 
       {rb.subScores.length > 0 && (
@@ -347,12 +398,8 @@ function RoundPlayerList({ rb }) {
           <div className="text-xs text-white/20 uppercase tracking-wider mb-1">Substitutes</div>
           <div className="space-y-0.5">
             {rb.subScores.map(ss => (
-              <div key={ss.playerId} className="flex items-center justify-between text-xs py-0.5 text-white/25">
-                <span>{ss.playerName}</span>
-                <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
-                  {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
-                </span>
-              </div>
+              <PlayerScoreRow key={ss.playerId} ss={ss}
+                isCounting={false} isSub={true} pars={pars} />
             ))}
           </div>
         </div>
