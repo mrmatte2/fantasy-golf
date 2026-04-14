@@ -83,10 +83,11 @@ async function loadPlayers() {
   return data;
 }
 
+const normName = n => n.toLowerCase().trim().replace(/\s+/g, ' ');
+
 function findPlayer(players, name) {
-  const norm = n => n.toLowerCase().trim().replace(/\s+/g, ' ');
-  const target = norm(name);
-  return players.find(p => norm(p.name) === target)?.id ?? null;
+  const target = normName(name);
+  return players.find(p => normName(p.name) === target)?.id ?? null;
 }
 
 async function createPlayer(name) {
@@ -136,6 +137,158 @@ async function snapshotRostersIfNewRound(pgaTournamentId) {
         .upsert(rows, { onConflict: 'tournament_id,user_id,player_id,round' });
       console.log(`  Snapshotted rosters for fantasy tournament ${ft.id} round ${round}`);
     }
+  }
+}
+
+// ─── Cut status ───────────────────────────────────────────────────────────────
+// Runs once per tournament, after R2 is fully complete and before R3 begins.
+// Fetches the ESPN per-player status endpoint for each rostered player and
+// writes made_cut = true/false to pga_tournament_players.
+//
+// Trigger conditions (all must be true):
+//   1. cut_checked = false on pga_tournaments
+//   2. Scores exist for round 2
+//   3. No scores yet for round 3
+//   4. ≥ 85% of players with any R2 data have all 18 holes (round is complete)
+//
+// Only sets cut_checked = true once at least 1 cut player is confirmed by ESPN,
+// so mid-R2 runs where everyone is still "in progress" will safely retry.
+
+async function updateCutStatus(pgaTournamentId, espnEventId, competitorMap) {
+  // 1. Already done?
+  const { data: pgaT } = await supabase
+    .from('pga_tournaments')
+    .select('cut_checked')
+    .eq('id', pgaTournamentId)
+    .single();
+  if (pgaT?.cut_checked) return;
+
+  // 2. R2 exists?
+  const { data: r2Sample } = await supabase
+    .from('scores')
+    .select('player_id')
+    .eq('pga_tournament_id', pgaTournamentId)
+    .eq('round', 2)
+    .limit(1);
+  if (!r2Sample?.length) {
+    console.log('  Cut check: no R2 scores yet — skipping.');
+    return;
+  }
+
+  // 3. R3 not started?
+  const { data: r3Sample } = await supabase
+    .from('scores')
+    .select('player_id')
+    .eq('pga_tournament_id', pgaTournamentId)
+    .eq('round', 3)
+    .limit(1);
+  if (r3Sample?.length) {
+    // R3 has started but cut_checked is still false — this shouldn't happen in
+    // normal flow (cut check would have fired between R2 end and R3 start),
+    // but if it did, mark all unset players as made_cut = true conservatively.
+    console.log('  Cut check: R3 already started but cut_checked=false — marking remaining players as made cut.');
+    await supabase
+      .from('pga_tournament_players')
+      .update({ made_cut: true })
+      .eq('pga_tournament_id', pgaTournamentId)
+      .is('made_cut', null);
+    await supabase.from('pga_tournaments').update({ cut_checked: true }).eq('id', pgaTournamentId);
+    return;
+  }
+
+  // 4. Is R2 ≥ 85% complete?
+  const { data: r2Rows } = await supabase
+    .from('scores')
+    .select('player_id')
+    .eq('pga_tournament_id', pgaTournamentId)
+    .eq('round', 2)
+    .limit(5000);
+
+  const holeCountByPlayer = {};
+  for (const row of r2Rows || []) {
+    holeCountByPlayer[row.player_id] = (holeCountByPlayer[row.player_id] || 0) + 1;
+  }
+  const totalR2Players = Object.keys(holeCountByPlayer).length;
+  const complete18 = Object.values(holeCountByPlayer).filter(c => c >= 18).length;
+  const ratio = totalR2Players > 0 ? complete18 / totalR2Players : 0;
+
+  if (ratio < 0.85) {
+    console.log(`  Cut check: R2 ${Math.round(ratio * 100)}% complete (${complete18}/${totalR2Players} with 18 holes) — not ready yet.`);
+    return;
+  }
+
+  console.log(`  Cut check: R2 ${Math.round(ratio * 100)}% complete — running cut detection.`);
+
+  // 5. Collect unique rostered players across all fantasy tournaments linked to this PGA event
+  const { data: fantasyTournaments } = await supabase
+    .from('tournaments')
+    .select('id')
+    .eq('pga_tournament_id', pgaTournamentId);
+
+  const ftIds = (fantasyTournaments || []).map(ft => ft.id);
+  if (!ftIds.length) { console.log('  Cut check: no linked fantasy tournaments.'); return; }
+
+  const { data: rosterRows } = await supabase
+    .from('rosters')
+    .select('player_id, players(name)')
+    .in('tournament_id', ftIds)
+    .eq('is_active', true);
+
+  // Deduplicate by player_id
+  const rosteredPlayers = [...new Map(
+    (rosterRows || []).map(r => [r.player_id, r.players?.name])
+  ).entries()].map(([id, name]) => ({ id, name }));
+
+  if (!rosteredPlayers.length) { console.log('  Cut check: no rostered players found.'); return; }
+
+  // 6. Fetch ESPN status for each rostered player
+  // Status URL: sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/{eventId}/competitions/{eventId}/competitors/{competitorId}/status
+  let cutFound = 0;
+  const updates = [];
+
+  for (const rp of rosteredPlayers) {
+    const espnComp = competitorMap.get(normName(rp.name));
+    if (!espnComp) {
+      console.log(`  Cut check: no ESPN match for "${rp.name}" — skipping.`);
+      continue;
+    }
+
+    const statusUrl = `https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/${espnEventId}/competitions/${espnEventId}/competitors/${espnComp.id}/status`;
+    try {
+      const statusData = await espnFetch(statusUrl);
+      const typeName = statusData?.type?.name;
+      const madeCut = typeName !== 'STATUS_CUT';
+      updates.push({ player_id: rp.id, made_cut: madeCut });
+      if (!madeCut) cutFound++;
+      console.log(`  ${rp.name}: ${typeName} → made_cut=${madeCut}`);
+    } catch (e) {
+      console.warn(`  Cut status fetch failed for "${rp.name}": ${e.message}`);
+    }
+  }
+
+  if (!updates.length) {
+    console.log('  Cut check: could not fetch any player statuses — will retry next run.');
+    return;
+  }
+
+  // 7. Write made_cut to pga_tournament_players
+  for (const upd of updates) {
+    await supabase
+      .from('pga_tournament_players')
+      .update({ made_cut: upd.made_cut })
+      .eq('pga_tournament_id', pgaTournamentId)
+      .eq('player_id', upd.player_id);
+  }
+  console.log(`  Cut check: ${cutFound} missed cut, ${updates.length - cutFound} made cut.`);
+
+  // 8. Seal the flag only once ESPN has confirmed at least one cut player.
+  //    If ESPN returns everyone as in-progress (mid-R2), we skip sealing so
+  //    the next 15-min run retries automatically.
+  if (cutFound > 0) {
+    await supabase.from('pga_tournaments').update({ cut_checked: true }).eq('id', pgaTournamentId);
+    console.log('  cut_checked = true — cut detection complete.');
+  } else {
+    console.log('  Cut check: no cut players confirmed by ESPN yet — will retry next run.');
   }
 }
 
@@ -256,10 +409,18 @@ const PARSERS = {
       return { playersMatched: 0, playersCreated: 0, scoresUpserted: 0 };
     }
 
+    const espnEventId = event.id;
     const competitors = event.competitions?.[0]?.competitors || [];
     if (!competitors.length) {
       console.log('No competitors found in ESPN response yet.');
       return { playersMatched: 0, playersCreated: 0, scoresUpserted: 0 };
+    }
+
+    // Build name → ESPN competitor map for cut status detection
+    const competitorMap = new Map();
+    for (const comp of competitors) {
+      const name = comp.athlete?.fullName || comp.athlete?.displayName;
+      if (name && comp.id) competitorMap.set(normName(name), { id: comp.id });
     }
 
     const [dbPlayers, parMap] = await Promise.all([loadPlayers(), loadHolePars(pgaTournamentId)]);
@@ -320,6 +481,7 @@ const PARSERS = {
     }
 
     await snapshotRostersIfNewRound(pgaTournamentId);
+    await updateCutStatus(pgaTournamentId, espnEventId, competitorMap);
 
     return { playersMatched: matched, playersCreated: created, scoresUpserted: totalUpserted };
   },
