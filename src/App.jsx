@@ -8,6 +8,7 @@ import LeaderboardPage from './pages/LeaderboardPage';
 import DraftPage from './pages/DraftPage';
 import MyTeamPage from './pages/MyTeamPage';
 import AdminPage from './pages/AdminPage';
+import RulesPage from './pages/RulesPage';
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { user, profile, loading } = useAuth();
@@ -64,6 +65,13 @@ export default function App() {
           <Route path="/tournament/:id/my-team" element={
             <ProtectedRoute>
               <AppLayout><MyTeamPage /></AppLayout>
+            </ProtectedRoute>
+          } />
+
+          {/* Rules */}
+          <Route path="/rules" element={
+            <ProtectedRoute>
+              <AppLayout><RulesPage /></AppLayout>
             </ProtectedRoute>
           } />
 

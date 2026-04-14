@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useTournament } from '../../hooks/useTournament';
 import { signOut } from '../../lib/supabase';
-import { Trophy, Users, BarChart3, Settings, LogOut, Menu, X, Lock, Unlock, ChevronLeft } from 'lucide-react';
+import { Trophy, Users, BarChart3, Settings, LogOut, Menu, X, Lock, Unlock, ChevronLeft, BookOpen } from 'lucide-react';
 
 export default function Navbar() {
   const { profile } = useAuth();
@@ -20,8 +20,10 @@ export default function Navbar() {
     { path: `/tournament/${tournamentId}/leaderboard`, label: 'Leaderboard', icon: Trophy },
     { path: `/tournament/${tournamentId}/draft`,       label: 'Draft',        icon: Users },
     { path: `/tournament/${tournamentId}/my-team`,     label: 'My Team',      icon: BarChart3 },
+    { path: '/rules',                                  label: 'Rules',        icon: BookOpen },
     ...(profile?.is_admin ? [{ path: '/admin', label: 'Admin', icon: Settings }] : []),
   ] : [
+    { path: '/rules', label: 'Rules', icon: BookOpen },
     ...(profile?.is_admin ? [{ path: '/admin', label: 'Admin', icon: Settings }] : []),
   ];
 
