@@ -83,7 +83,7 @@ export async function getPgaFieldCounts() {
 export async function getPgaField(pgaTournamentId) {
   return await supabase
     .from('pga_tournament_players')
-    .select('*, players(id, name, country, world_ranking, owgr_id, is_withdrawn, made_cut)')
+    .select('*, players(id, name, country, world_ranking, owgr_id, is_withdrawn)')
     .eq('pga_tournament_id', pgaTournamentId)
     .order('players(world_ranking)');
 }
@@ -285,12 +285,6 @@ export async function deletePlayer(playerId) {
   return await supabase.from('players').delete().eq('id', playerId);
 }
 
-export async function markAllPlayersMissedCut() {
-  return await supabase
-    .from('players')
-    .update({ made_cut: false })
-    .neq('id', '00000000-0000-0000-0000-000000000000');
-}
 
 // ─── Rosters ──────────────────────────────────────────────────────────────────
 
@@ -401,8 +395,19 @@ export async function getScoresForPlayers(pgaTournamentId, playerIds) {
 export async function getRoundSnapshots(tournamentId) {
   return await supabase
     .from('roster_round_players')
-    .select('round, user_id, player_id, slot_type, players(id, name, world_ranking, is_withdrawn, made_cut)')
+    .select('round, user_id, player_id, slot_type, players(id, name, world_ranking, is_withdrawn)')
     .eq('tournament_id', tournamentId);
+}
+
+// Returns { [player_id]: true | false | null } for a PGA tournament.
+// null = cut check not yet run; false = missed cut; true = made cut.
+export async function getTournamentCutStatus(pgaTournamentId) {
+  if (!pgaTournamentId) return {};
+  const { data } = await supabase
+    .from('pga_tournament_players')
+    .select('player_id, made_cut')
+    .eq('pga_tournament_id', pgaTournamentId);
+  return Object.fromEntries((data || []).map(r => [r.player_id, r.made_cut]));
 }
 
 export async function getLockedRounds(tournamentId) {

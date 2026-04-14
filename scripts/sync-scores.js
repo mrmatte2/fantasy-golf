@@ -92,7 +92,7 @@ function findPlayer(players, name) {
 async function createPlayer(name) {
   const { data, error } = await supabase
     .from('players')
-    .insert({ name, is_active: true, made_cut: true })
+    .insert({ name, is_active: true })
     .select('id')
     .single();
   if (error) throw new Error(`Failed to create player "${name}": ${error.message}`);

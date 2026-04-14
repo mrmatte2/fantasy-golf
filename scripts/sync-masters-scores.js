@@ -59,7 +59,6 @@ async function main() {
           country: mp.countryName || null,
           masters_id: String(mp.id),
           is_active: true,
-          made_cut: mp.active === true || (mp.status !== 'C' && mp.status !== 'WD'),
           is_withdrawn: mp.status === 'WD',
         })
         .select('id')

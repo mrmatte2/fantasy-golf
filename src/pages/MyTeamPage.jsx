@@ -5,6 +5,7 @@ import { useTournament } from '../hooks/useTournament';
 import {
   getUserRoster, getPlayerScores, getHolePars, updateRosterEntry,
   getUserMembership, joinTournament, getRoundSnapshots, getTournament,
+  getTournamentCutStatus,
 } from '../lib/supabase';
 import { ArrowLeftRight, ChevronDown, ChevronRight, Lock, Star, LogIn } from 'lucide-react';
 
@@ -67,13 +68,14 @@ function HoleByHoleRow({ scores, pars, round }) {
   );
 }
 
-function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubClick, isLocked, isSub }) {
+function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubClick, isLocked, isSub, madeCut }) {
   const [expanded, setExpanded] = useState(false);
   const player = rosterEntry.players;
   const roundScores = (scores || []).filter(s => s.round === currentRound);
   const roundTotal = roundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
   const holesPlayed = roundScores.length;
-  const missedCut = !player?.made_cut && !player?.is_withdrawn;
+  // madeCut: true = made cut, false = missed cut, null/undefined = not yet determined
+  const missedCut = madeCut === false && !player?.is_withdrawn;
   const needsSub = !isSub && missedCut && !isLocked;
 
   return (
@@ -158,6 +160,7 @@ export default function MyTeamPage() {
   const [pars, setPars] = useState([]);
   const [membership, setMembership] = useState(undefined);
   const [lockedRounds, setLockedRounds] = useState([]);
+  const [cutStatus, setCutStatus] = useState({});
   const [loading, setLoading] = useState(true);
   const [subModal, setSubModal] = useState(null);
   const [subs, setSubs] = useState([]);
@@ -181,6 +184,7 @@ export default function MyTeamPage() {
     setRoster(rosterData);
     setMembership(mem ?? null);
     setLockedRounds([...new Set((snapData || []).map(s => s.round))].sort());
+    setCutStatus(await getTournamentCutStatus(pgaTournamentId));
 
     const [holeParsResult, ...scoreResponses] = await Promise.all([
       getHolePars(pgaTournamentId),
@@ -305,8 +309,8 @@ export default function MyTeamPage() {
       )}
 
       {(() => {
-        const cutStarters = starters.filter(r => !r.players?.made_cut && !r.players?.is_withdrawn);
-        const cutSubs = subsRoster.filter(r => !r.players?.made_cut && !r.players?.is_withdrawn);
+        const cutStarters = starters.filter(r => cutStatus[r.player_id] === false && !r.players?.is_withdrawn);
+        const cutSubs = subsRoster.filter(r => cutStatus[r.player_id] === false && !r.players?.is_withdrawn);
         if (cutStarters.length === 0) return null;
         return (
           <div className="mb-5 px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 text-sm">
@@ -332,7 +336,8 @@ export default function MyTeamPage() {
           {starters.map(r => (
             <PlayerRow key={r.id} rosterEntry={r} isTopFour={topFourIds.has(r.player_id)}
               scores={scores[r.player_id]} pars={pars} currentRound={currentRound}
-              onSubClick={openSubModal} isLocked={isLocked} isSub={false} />
+              onSubClick={openSubModal} isLocked={isLocked} isSub={false}
+              madeCut={cutStatus[r.player_id] ?? null} />
           ))}
           {starters.length === 0 && (
             <div className="card-dark text-center text-white/30 text-sm py-8">
@@ -348,7 +353,8 @@ export default function MyTeamPage() {
           {subsRoster.map(r => (
             <PlayerRow key={r.id} rosterEntry={r} isTopFour={false}
               scores={scores[r.player_id]} pars={pars} currentRound={currentRound}
-              onSubClick={() => {}} isLocked={isLocked} isSub={true} />
+              onSubClick={() => {}} isLocked={isLocked} isSub={true}
+              madeCut={cutStatus[r.player_id] ?? null} />
           ))}
           {subsRoster.length === 0 && (
             <div className="card-dark text-center text-white/30 text-sm py-6">No substitutes selected.</div>
@@ -368,12 +374,12 @@ export default function MyTeamPage() {
               {subs.length === 0 && <p className="text-white/30 text-sm text-center py-4">No substitutes available</p>}
               {subs
                 .sort((a, b) => {
-                  const aOk = a.players?.made_cut && !a.players?.is_withdrawn;
-                  const bOk = b.players?.made_cut && !b.players?.is_withdrawn;
+                  const aOk = cutStatus[a.player_id] !== false && !a.players?.is_withdrawn;
+                  const bOk = cutStatus[b.player_id] !== false && !b.players?.is_withdrawn;
                   return bOk - aOk;
                 })
                 .map(sub => {
-                  const survived = sub.players?.made_cut && !sub.players?.is_withdrawn;
+                  const survived = cutStatus[sub.player_id] !== false && !sub.players?.is_withdrawn;
                   const subRoundScores = currentRound > 0
                     ? (scores[sub.player_id] || []).filter(s => s.round === currentRound)
                     : [];

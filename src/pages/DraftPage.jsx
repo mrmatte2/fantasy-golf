@@ -5,7 +5,7 @@ import { useTournament } from '../hooks/useTournament';
 import {
   getTournamentPlayers, getTournamentPriceMap,
   getUserRoster, addToRoster, removeFromRoster,
-  getUserMembership, joinTournament,
+  getUserMembership, joinTournament, getTournamentCutStatus,
 } from '../lib/supabase';
 import { Search, Lock, Info, LogIn } from 'lucide-react';
 
@@ -31,7 +31,7 @@ function PlayerCard({ player, rosterEntry, onAdd, onRemove, canAdd, isLocked }) 
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="font-display font-semibold text-masters-cream text-sm">{player.name}</span>
             {player.is_withdrawn && <span className="badge-wd">WD</span>}
-            {!player.made_cut && !player.is_withdrawn && <span className="badge-cut">CUT</span>}
+            {player.made_cut === false && !player.is_withdrawn && <span className="badge-cut">CUT</span>}
             {isStarter && <span className="badge-starter">Starter</span>}
             {isSub && <span className="badge-sub">Sub</span>}
           </div>
@@ -85,26 +85,30 @@ export default function DraftPage() {
   const [joinError, setJoinError] = useState('');
 
   const budget = tournament?.budget ?? 100;
+  const pgaTournamentId = tournament?.pga_tournament_id ?? null;
   const isLocked = tournament?.is_locked || !tournament?.draft_open;
   const starters = roster.filter(r => r.slot_type === 'starter' && r.is_active);
   const subs = roster.filter(r => r.slot_type === 'sub' && r.is_active);
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [{ data: pls }, { data: rst }, { data: mem }, priceMap] = await Promise.all([
+    const [{ data: pls }, { data: rst }, { data: mem }, priceMap, cutStatus] = await Promise.all([
       getTournamentPlayers(tournamentId),
       getUserRoster(user.id, tournamentId),
       getUserMembership(tournamentId, user.id),
       getTournamentPriceMap(tournamentId),
+      getTournamentCutStatus(pgaTournamentId),
     ]);
-    setPlayers(pls || []);
+    // Merge per-tournament cut status into players
+    const playersWithCut = (pls || []).map(p => ({ ...p, made_cut: cutStatus[p.id] ?? null }));
+    setPlayers(playersWithCut);
     setRoster(rst || []);
     setMembership(mem ?? null);
     // Use tournament-specific prices for budget calculation
     const spent = (rst || []).reduce((sum, r) => sum + (priceMap[r.player_id] ?? r.players?.price ?? 0), 0);
     setCurrentBudget(budget - spent);
     setLoading(false);
-  }, [user.id, tournamentId, budget]);
+  }, [user.id, tournamentId, budget, pgaTournamentId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -181,11 +185,11 @@ export default function DraftPage() {
     );
   }
 
-  const cutCount = players.filter(p => p.is_active && !p.is_withdrawn && !p.made_cut).length;
+  const cutCount = players.filter(p => p.is_active && !p.is_withdrawn && p.made_cut === false).length;
 
   const filtered = players
     .filter(p => {
-      if (hideCut && !p.made_cut && !p.is_withdrawn) return false;
+      if (hideCut && p.made_cut === false && !p.is_withdrawn) return false;
       const q = search.toLowerCase();
       return p.name.toLowerCase().includes(q) || (p.country || '').toLowerCase().includes(q);
     })

@@ -117,7 +117,7 @@ async function upsertField(pgaTournamentId, competitors) {
       const country = comp.athlete?.flag?.alt || null;
       const { data: newPlayer, error } = await supabase
         .from('players')
-        .insert({ name: fullName, country, is_active: true, made_cut: true })
+        .insert({ name: fullName, country, is_active: true })
         .select('id, name')
         .single();
       if (error) { console.warn(`  ⚠ Could not create "${fullName}": ${error.message}`); continue; }

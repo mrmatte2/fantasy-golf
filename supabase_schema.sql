@@ -54,6 +54,7 @@ create table public.pga_tournaments (
   sync_start_date date,
   sync_end_date date,
   sync_enabled boolean default false,
+  cut_checked boolean not null default false,
   created_at timestamptz default now()
 );
 
@@ -65,6 +66,7 @@ create table public.pga_tournament_players (
   pga_tournament_id uuid references public.pga_tournaments(id) on delete cascade,
   player_id uuid references public.players(id) on delete cascade,
   is_in_field boolean default true,
+  made_cut boolean,           -- null = not yet determined, true = made cut, false = missed cut
   unique(pga_tournament_id, player_id)
 );
 
@@ -119,7 +121,6 @@ create table public.players (
   form_score numeric(4,2),
   is_active boolean default true,
   is_withdrawn boolean default false,
-  made_cut boolean default true,
   photo_url text,
   price numeric(5,2),
   price_override numeric(5,2),

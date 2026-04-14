@@ -5,7 +5,7 @@ import {
   supabase,
   getPgaTournaments, createPgaTournament, updatePgaTournament, deletePgaTournament,
   getPgaField, upsertPgaField, getPgaHolePars, upsertPgaHolePars, getPgaFieldCounts,
-  getAllPlayers, updatePlayer, createPlayer, markAllPlayersMissedCut,
+  getAllPlayers, updatePlayer, createPlayer,
   getAllProfiles, updateProfile,
   getPlayers, getAllScores, upsertScore,
   getTournamentPlayers, upsertTournamentPlayers, getPlayerScores,
@@ -177,7 +177,7 @@ function PgaEventsTab() {
       for (const name of importNewNames) {
         const { data: newPlayer } = await supabase
           .from('players')
-          .insert({ name, is_active: true, made_cut: true })
+          .insert({ name, is_active: true })
           .select('id, name')
           .single();
         if (newPlayer) {
@@ -1195,7 +1195,6 @@ function PlayersTab() {
   const [addModal, setAddModal] = useState(false);
   const [newForm, setNewForm] = useState({ name: '', country: '', world_ranking: '', odds_fractional: '', odds_decimal: '', form_score: 5, price: '' });
   const [saving, setSaving] = useState(false);
-  const [cutMode, setCutMode] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
@@ -1220,7 +1219,6 @@ function PlayersTab() {
       price: player.price ?? '',
       form_score: player.form_score ?? '',
       is_withdrawn: player.is_withdrawn,
-      made_cut: player.made_cut,
       is_active: player.is_active,
       odds_fractional: player.odds_fractional ?? '',
       world_ranking: player.world_ranking ?? '',
@@ -1235,7 +1233,6 @@ function PlayersTab() {
       price: editForm.price !== '' ? parseFloat(editForm.price) : player.price,
       form_score: editForm.form_score !== '' ? parseFloat(editForm.form_score) : player.form_score,
       is_withdrawn: editForm.is_withdrawn,
-      made_cut: editForm.made_cut,
       is_active: editForm.is_active,
       odds_fractional: editForm.odds_fractional || player.odds_fractional,
       world_ranking: editForm.world_ranking !== '' ? parseInt(editForm.world_ranking) : player.world_ranking,
@@ -1263,19 +1260,6 @@ function PlayersTab() {
     setSaving(false);
   }
 
-  async function handleMarkAllCut() {
-    if (!window.confirm('Mark ALL players as missed cut? You can then toggle survivors back individually.')) return;
-    setSaving(true);
-    await markAllPlayersMissedCut();
-    await load();
-    setSaving(false);
-  }
-
-  async function toggleCut(player) {
-    await updatePlayer(player.id, { made_cut: !player.made_cut });
-    await load();
-  }
-
   return (
     <div>
       {/* Toolbar */}
@@ -1287,17 +1271,9 @@ function PlayersTab() {
           onChange={e => setSearch(e.target.value)}
           className="input flex-1 min-w-48"
         />
-        <button onClick={() => setCutMode(!cutMode)}
-          className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg border transition-colors shrink-0 ${
-            cutMode ? 'bg-masters-gold/20 text-masters-gold border-masters-gold/40' : 'btn-secondary'
-          }`}>
-          {cutMode ? 'Exit Cut Mode' : 'Manage Cut'}
+        <button onClick={() => setAddModal(true)} className="btn-secondary flex items-center gap-2 text-sm shrink-0">
+          <Plus size={14} /> Add Player
         </button>
-        {!cutMode && (
-          <button onClick={() => setAddModal(true)} className="btn-secondary flex items-center gap-2 text-sm shrink-0">
-            <Plus size={14} /> Add Player
-          </button>
-        )}
       </div>
 
       <p className="text-xs text-white/30 mb-3">
@@ -1305,36 +1281,7 @@ function PlayersTab() {
         {search && ` matching "${search}"`}
       </p>
 
-      {/* Cut mode — unchanged grid */}
-      {cutMode ? (
-        <div className="card-dark border-masters-gold/20">
-          <div className="flex items-start justify-between gap-4 mb-4">
-            <div>
-              <p className="text-sm text-masters-cream font-medium">Cut Management</p>
-              <p className="text-xs text-white/40 mt-0.5">Click a player to toggle. Green = survived cut, red = missed cut.</p>
-            </div>
-            <button onClick={handleMarkAllCut} disabled={saving}
-              className="btn-danger text-xs shrink-0 flex items-center gap-1.5">
-              {saving ? <RefreshCw size={12} className="animate-spin" /> : <X size={12} />}
-              Mark All as CUT
-            </button>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {filtered.filter(p => p.is_active && !p.is_withdrawn).map(player => (
-              <button key={player.id} onClick={() => toggleCut(player)}
-                className={`text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
-                  player.made_cut
-                    ? 'border-green-700/50 bg-green-900/20 text-green-300 hover:bg-green-900/40'
-                    : 'border-red-800/40 bg-red-900/15 text-red-400/70 hover:bg-red-900/30'
-                }`}>
-                <div className="font-medium truncate">{player.name}</div>
-                <div className="text-xs opacity-60">#{player.world_ranking} · {player.made_cut ? 'Made Cut ✓' : 'Missed Cut ✗'}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <>
+      <>
           {/* Compact table */}
           <div className="rounded-xl border border-white/8 overflow-hidden">
             <table className="w-full text-sm">
@@ -1355,7 +1302,6 @@ function PlayersTab() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-masters-cream font-medium">{player.name}</span>
                         {player.is_withdrawn && <span className="badge-wd">WD</span>}
-                        {!player.made_cut && <span className="badge-cut">CUT</span>}
                         {!player.is_active && <span className="text-xs text-white/30 italic">inactive</span>}
                       </div>
                       <div className="text-xs text-white/30 sm:hidden mt-0.5">
@@ -1401,7 +1347,6 @@ function PlayersTab() {
             </div>
           )}
         </>
-      )}
 
       {/* Edit player modal */}
       {editModal && (
@@ -1447,11 +1392,6 @@ function PlayersTab() {
                 <input type="checkbox" checked={editForm.is_withdrawn}
                   onChange={e => setEditForm(f => ({ ...f, is_withdrawn: e.target.checked }))} />
                 Withdrawn (WD)
-              </label>
-              <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
-                <input type="checkbox" checked={!editForm.made_cut}
-                  onChange={e => setEditForm(f => ({ ...f, made_cut: !e.target.checked }))} />
-                Missed Cut
               </label>
             </div>
             <div className="flex gap-3 mt-5">

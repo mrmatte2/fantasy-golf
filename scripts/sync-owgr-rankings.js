@@ -72,7 +72,6 @@ async function main() {
         world_ranking: rank,
         owgr_id: owgrId,
         is_active: true,
-        made_cut: true,
       });
       if (error) {
         unmatched.push(`${fullName} (create failed: ${error.message})`);
