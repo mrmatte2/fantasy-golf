@@ -216,6 +216,17 @@ async function snapshotRostersIfNewRound(pgaTournamentId) {
         .from('roster_round_players')
         .upsert(rows, { onConflict: 'tournament_id,user_id,player_id,round' });
       console.log(`  Snapshotted rosters for fantasy tournament ${ft.id} round ${round}`);
+
+      // Lock the fantasy tournament when R1 scores first arrive so players
+      // can no longer edit their draft. Subsequent rounds use the sub system.
+      if (round === 1) {
+        await supabase
+          .from('tournaments')
+          .update({ is_locked: true })
+          .eq('id', ft.id)
+          .eq('is_locked', false); // no-op if already locked
+        console.log(`  Locked fantasy tournament ${ft.id} (R1 scores received)`);
+      }
     }
   }
 }
