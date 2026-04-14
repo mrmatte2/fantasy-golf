@@ -7,7 +7,7 @@ import {
   getUserRoster, addToRoster, removeFromRoster,
   getUserMembership, joinTournament, getTournamentCutStatus,
 } from '../lib/supabase';
-import { Search, Lock, Info, LogIn } from 'lucide-react';
+import { Search, Lock, Info, LogIn, KeyRound } from 'lucide-react';
 
 const MAX_STARTERS = 5;
 const MAX_SUBS = 3;
@@ -81,6 +81,7 @@ export default function DraftPage() {
 
   // Join flow state
   const [joinTeamName, setJoinTeamName] = useState('');
+  const [joinCode, setJoinCode] = useState('');
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState('');
 
@@ -116,7 +117,10 @@ export default function DraftPage() {
     if (!joinTeamName.trim()) { setJoinError('Team name is required'); return; }
     setJoining(true);
     setJoinError('');
-    const { error, data } = await joinTournament(tournamentId, user.id, joinTeamName.trim());
+    const { error, data } = await joinTournament(
+      tournamentId, user.id, joinTeamName.trim(),
+      joinCode, tournament?.join_code
+    );
     if (error) { setJoinError(error.message); setJoining(false); return; }
     setMembership(data);
     setJoining(false);
@@ -167,12 +171,22 @@ export default function DraftPage() {
           <p className="text-white/40 text-sm mb-5">
             Choose a team name for <span className="text-white/60">{tournament?.name}</span> to start drafting.
           </p>
-          <div className="text-left mb-4">
-            <label className="label">Team Name</label>
-            <input value={joinTeamName} onChange={e => { setJoinTeamName(e.target.value); setJoinError(''); }}
-              className="input" placeholder="e.g. Amen Corner FC" autoFocus
-              onKeyDown={e => e.key === 'Enter' && handleJoin()} />
-            {joinError && <p className="text-red-400 text-xs mt-1">{joinError}</p>}
+          <div className="text-left space-y-3 mb-4">
+            {tournament?.join_code && (
+              <div>
+                <label className="label flex items-center gap-1.5"><KeyRound size={12} /> Join Code</label>
+                <input value={joinCode} onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinError(''); }}
+                  className="input font-mono tracking-widest" placeholder="Enter code" autoFocus />
+              </div>
+            )}
+            <div>
+              <label className="label">Team Name</label>
+              <input value={joinTeamName} onChange={e => { setJoinTeamName(e.target.value); setJoinError(''); }}
+                className="input" placeholder="e.g. Amen Corner FC"
+                autoFocus={!tournament?.join_code}
+                onKeyDown={e => e.key === 'Enter' && handleJoin()} />
+            </div>
+            {joinError && <p className="text-red-400 text-xs">{joinError}</p>}
           </div>
           <div className="flex gap-3">
             <button onClick={handleJoin} disabled={joining} className="btn-primary flex-1">

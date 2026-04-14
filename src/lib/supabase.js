@@ -125,7 +125,7 @@ export async function upsertPgaHolePars(pgaTournamentId, pars) {
 export async function getTournaments() {
   return await supabase
     .from('tournaments')
-    .select('*, pga_tournaments(id, name, course, year)')
+    .select('*, pga_tournaments(id, name, course, year, sync_end_date)')
     .order('created_at', { ascending: false });
 }
 
@@ -173,7 +173,12 @@ export async function getUserMemberships(userId) {
     .order('created_at', { ascending: false });
 }
 
-export async function joinTournament(tournamentId, userId, teamName) {
+export async function joinTournament(tournamentId, userId, teamName, joinCode, requiredCode) {
+  if (requiredCode) {
+    if (!joinCode || joinCode.trim().toUpperCase() !== requiredCode.trim().toUpperCase()) {
+      return { data: null, error: { message: 'Incorrect join code.' } };
+    }
+  }
   return await supabase
     .from('tournament_memberships')
     .insert({ tournament_id: tournamentId, user_id: userId, team_name: teamName })

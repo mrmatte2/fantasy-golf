@@ -719,13 +719,13 @@ function TournamentsTab({ currentUserId }) {
   }
 
   function openCreate() {
-    setForm({ name: '', pga_tournament_id: '', budget: 100, draft_open: true, is_locked: false });
+    setForm({ name: '', pga_tournament_id: '', budget: 100, draft_open: true, is_locked: false, join_code: '' });
     setSaveError('');
     setModal('create');
   }
 
   function openEdit(t) {
-    setForm({ name: t.name, pga_tournament_id: t.pga_tournament_id || '', budget: t.budget, draft_open: t.draft_open, is_locked: t.is_locked });
+    setForm({ name: t.name, pga_tournament_id: t.pga_tournament_id || '', budget: t.budget, draft_open: t.draft_open, is_locked: t.is_locked, join_code: t.join_code || '' });
     setSaveError('');
     setModal(t);
   }
@@ -740,6 +740,7 @@ function TournamentsTab({ currentUserId }) {
       budget: form.budget,
       draft_open: form.draft_open,
       is_locked: form.is_locked,
+      join_code: form.join_code.trim().toUpperCase() || null,
     };
     const { error } = modal === 'create'
       ? await createTournament({ ...payload, created_by: currentUserId })
@@ -784,8 +785,13 @@ function TournamentsTab({ currentUserId }) {
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="font-display font-semibold text-masters-cream">{t.name}</span>
                   </div>
-                  <div className="text-xs text-white/40">
-                    {[t.pga_tournaments?.name, `£${t.budget} budget`].filter(Boolean).join(' · ')}
+                  <div className="text-xs text-white/40 flex items-center gap-3 flex-wrap">
+                    <span>{[t.pga_tournaments?.name, `£${t.budget} budget`].filter(Boolean).join(' · ')}</span>
+                    {t.join_code && (
+                      <span className="font-mono tracking-wider px-2 py-0.5 rounded bg-masters-gold/10 text-masters-gold/70 border border-masters-gold/20">
+                        🔑 {t.join_code}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 mt-3 flex-wrap">
                     <button onClick={() => quickUpdate(t, { is_locked: !t.is_locked })}
@@ -851,6 +857,12 @@ function TournamentsTab({ currentUserId }) {
                 <input type="number" step="10" value={form.budget}
                   onChange={e => setForm(f => ({ ...f, budget: e.target.value }))}
                   className="input" />
+              </div>
+              <div>
+                <label className="label">Join Code <span className="text-white/30 font-normal">(optional — leave blank for open)</span></label>
+                <input value={form.join_code}
+                  onChange={e => setForm(f => ({ ...f, join_code: e.target.value.toUpperCase() }))}
+                  className="input font-mono tracking-widest" placeholder="e.g. MASTERS26" maxLength={20} />
               </div>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
