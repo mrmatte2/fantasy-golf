@@ -198,7 +198,9 @@ export default function MyTeamPage() {
 
   const allScoresList = Object.values(scores).flat();
   const currentRound = allScoresList.length > 0 ? Math.max(...allScoresList.map(s => s.round)) : 0;
-  const isLocked = currentRound > 0 && lockedRounds.includes(currentRound);
+  // Subs are blocked only while a round has scores but no snapshot yet (the brief sync window).
+  // Once snapshotted, the round is frozen — subs only affect future rounds, so allow them.
+  const isLocked = currentRound > 0 && !lockedRounds.includes(currentRound);
 
   const starters = roster.filter(r => r.slot_type === 'starter' && r.is_active);
   const subsRoster = roster.filter(r => r.slot_type === 'sub' && r.is_active);
@@ -298,7 +300,7 @@ export default function MyTeamPage() {
 
       {isLocked && (
         <div className="mb-5 px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 flex items-center gap-3 text-red-300 text-sm">
-          <Lock size={15} /> Round {currentRound} is locked. Substitutions available between rounds.
+          <Lock size={15} /> Round {currentRound} is in progress — substitutions temporarily unavailable until the round locks in.
         </div>
       )}
 
@@ -314,8 +316,8 @@ export default function MyTeamPage() {
             </div>
             <p className="text-red-300/60 text-xs">
               {isLocked
-                ? 'Substitutions will open between rounds.'
-                : `Swap them out before Round ${currentRound + 1}. ${cutSubs.length > 0 ? `Note: ${cutSubs.length} of your subs also missed the cut.` : 'Check your subs below — pick one who survived.'}`
+                ? 'Substitutions will open once the round locks in.'
+                : `Swap them out now — changes take effect from Round ${currentRound + 1}. ${cutSubs.length > 0 ? `Note: ${cutSubs.length} of your subs also missed the cut.` : 'Check your subs below — pick one who survived.'}`
               }
             </p>
           </div>
