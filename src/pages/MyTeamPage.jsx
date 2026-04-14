@@ -7,7 +7,7 @@ import {
   getUserMembership, joinTournament, getRoundSnapshots, getTournament,
   getTournamentCutStatus,
 } from '../lib/supabase';
-import { ArrowLeftRight, ChevronDown, ChevronRight, Lock, Star, LogIn } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, ChevronRight, Lock, Star, LogIn, ChevronUp, AlertTriangle } from 'lucide-react';
 
 function vsParClass(vp) {
   if (vp < 0) return 'score-under';
@@ -207,7 +207,7 @@ export default function MyTeamPage() {
   const isLocked = currentRound > 0 && !lockedRounds.includes(currentRound);
 
   const starters = roster.filter(r => r.slot_type === 'starter' && r.is_active);
-  const subsRoster = roster.filter(r => r.slot_type === 'sub' && r.is_active);
+  const subsRoster = roster.filter(r => r.slot_type === 'sub' && r.is_active).sort((a, b) => a.slot_number - b.slot_number);
 
   const startersWithScores = starters.map(r => {
     const roundScores = (scores[r.player_id] || []).filter(s => s.round === currentRound);
@@ -234,6 +234,15 @@ export default function MyTeamPage() {
     await updateRosterEntry(user.id, outEntry.player_id, tournamentId, { slot_type: 'sub', slot_number: inEntry.slot_number });
     await updateRosterEntry(user.id, inEntry.player_id, tournamentId, { slot_type: 'starter', slot_number: outEntry.slot_number });
     setSubModal(null);
+    await loadData();
+  }
+
+  async function handleReorderSub(subA, subB) {
+    // Swap slot_numbers between two adjacent subs
+    await Promise.all([
+      updateRosterEntry(user.id, subA.player_id, tournamentId, { slot_number: subB.slot_number }),
+      updateRosterEntry(user.id, subB.player_id, tournamentId, { slot_number: subA.slot_number }),
+    ]);
     await loadData();
   }
 
@@ -302,6 +311,18 @@ export default function MyTeamPage() {
         )}
       </div>
 
+      {membership.is_dnf && (
+        <div className="mb-5 px-4 py-3 rounded-xl bg-red-950/40 border border-red-700/50 flex items-center gap-3 text-red-300 text-sm">
+          <AlertTriangle size={15} className="shrink-0" />
+          <div>
+            <div className="font-semibold">Team DNF</div>
+            <div className="text-red-300/60 text-xs mt-0.5">
+              Your team couldn't field 4 valid starters after the cut — no score for R3 or R4.
+            </div>
+          </div>
+        </div>
+      )}
+
       {isLocked && (
         <div className="mb-5 px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 flex items-center gap-3 text-red-300 text-sm">
           <Lock size={15} /> Round {currentRound} is in progress — substitutions temporarily unavailable until the round locks in.
@@ -348,13 +369,46 @@ export default function MyTeamPage() {
       </div>
 
       <div className="animate-fade-up-delay-2">
-        <h2 className="font-display font-semibold text-masters-cream mb-3">Substitutes</h2>
+        <h2 className="font-display font-semibold text-masters-cream mb-1 flex items-center gap-2">
+          Substitutes
+          <span className="text-xs font-body text-white/40">(auto-sub order)</span>
+        </h2>
+        {!isLocked && subsRoster.length > 1 && (
+          <p className="text-xs text-white/30 mb-3">Use the arrows to set priority order — Sub 1 auto-subs in first.</p>
+        )}
+        {isLocked && <div className="mb-3" />}
         <div className="space-y-2">
-          {subsRoster.map(r => (
-            <PlayerRow key={r.id} rosterEntry={r} isTopFour={false}
-              scores={scores[r.player_id]} pars={pars} currentRound={currentRound}
-              onSubClick={() => {}} isLocked={isLocked} isSub={true}
-              madeCut={cutStatus[r.player_id] ?? null} />
+          {subsRoster.map((r, idx) => (
+            <div key={r.id} className="flex items-stretch gap-2">
+              {/* Order badge + reorder buttons */}
+              <div className="flex flex-col items-center gap-0.5 shrink-0">
+                <span className="text-xs font-mono text-white/30 font-medium w-8 text-center pt-4">
+                  S{idx + 1}
+                </span>
+                {!isLocked && (
+                  <>
+                    <button
+                      onClick={() => idx > 0 && handleReorderSub(r, subsRoster[idx - 1])}
+                      disabled={idx === 0}
+                      className="p-0.5 text-white/20 hover:text-white/60 disabled:opacity-0 transition-colors">
+                      <ChevronUp size={13} />
+                    </button>
+                    <button
+                      onClick={() => idx < subsRoster.length - 1 && handleReorderSub(r, subsRoster[idx + 1])}
+                      disabled={idx === subsRoster.length - 1}
+                      className="p-0.5 text-white/20 hover:text-white/60 disabled:opacity-0 transition-colors">
+                      <ChevronDown size={13} />
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="flex-1">
+                <PlayerRow rosterEntry={r} isTopFour={false}
+                  scores={scores[r.player_id]} pars={pars} currentRound={currentRound}
+                  onSubClick={() => {}} isLocked={isLocked} isSub={true}
+                  madeCut={cutStatus[r.player_id] ?? null} />
+              </div>
+            </div>
           ))}
           {subsRoster.length === 0 && (
             <div className="card-dark text-center text-white/30 text-sm py-6">No substitutes selected.</div>

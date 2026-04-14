@@ -32,8 +32,8 @@ function PlayerCard({ player, rosterEntry, onAdd, onRemove, canAdd, isLocked }) 
             <span className="font-display font-semibold text-masters-cream text-sm">{player.name}</span>
             {player.is_withdrawn && <span className="badge-wd">WD</span>}
             {player.made_cut === false && !player.is_withdrawn && <span className="badge-cut">CUT</span>}
-            {isStarter && <span className="badge-starter">Starter</span>}
-            {isSub && <span className="badge-sub">Sub</span>}
+            {isStarter && <span className="badge-starter">Starter {rosterEntry?.slot_number}</span>}
+            {isSub && <span className="badge-sub">Sub {rosterEntry?.slot_number}</span>}
           </div>
           <div className="flex items-center gap-3 text-xs text-white/40">
             <span>#{player.world_ranking} WR</span>

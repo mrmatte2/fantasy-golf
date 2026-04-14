@@ -101,6 +101,81 @@ async function createPlayer(name) {
   return data.id;
 }
 
+// ─── Auto-sub & DNF (runs before R3+ snapshots) ───────────────────────────────
+// Replaces cut starters with available subs in slot_number order.
+// If a team can't field 4 valid starters after auto-subbing, marks them DNF.
+
+async function autoSubCutPlayers(pgaTournamentId) {
+  const { data: pgaT } = await supabase
+    .from('pga_tournaments')
+    .select('cut_checked')
+    .eq('id', pgaTournamentId)
+    .single();
+  if (!pgaT?.cut_checked) return; // cut not yet determined
+
+  // Build cut status map: player_id → made_cut (true/false/null)
+  const { data: cutData } = await supabase
+    .from('pga_tournament_players')
+    .select('player_id, made_cut')
+    .eq('pga_tournament_id', pgaTournamentId);
+  const cutStatus = Object.fromEntries((cutData || []).map(r => [r.player_id, r.made_cut]));
+
+  const isInvalid = (r) => cutStatus[r.player_id] === false || r.players?.is_withdrawn;
+
+  const { data: fantasyTournaments } = await supabase
+    .from('tournaments')
+    .select('id')
+    .eq('pga_tournament_id', pgaTournamentId);
+
+  for (const ft of fantasyTournaments || []) {
+    const { data: rosters } = await supabase
+      .from('rosters')
+      .select('id, user_id, player_id, slot_type, slot_number, players(name, is_withdrawn)')
+      .eq('tournament_id', ft.id)
+      .eq('is_active', true)
+      .order('slot_number');
+
+    // Group by user
+    const byUser = {};
+    for (const r of rosters || []) {
+      if (!byUser[r.user_id]) byUser[r.user_id] = { starters: [], subs: [] };
+      (r.slot_type === 'starter' ? byUser[r.user_id].starters : byUser[r.user_id].subs).push(r);
+    }
+
+    for (const [userId, { starters, subs }] of Object.entries(byUser)) {
+      const cutStarters = starters.filter(isInvalid);
+      if (!cutStarters.length) continue; // nothing to do for this user
+
+      const availableSubs = subs
+        .filter(r => !isInvalid(r))
+        .sort((a, b) => a.slot_number - b.slot_number);
+
+      const swapCount = Math.min(cutStarters.length, availableSubs.length);
+      for (let i = 0; i < swapCount; i++) {
+        const out = cutStarters[i];
+        const inSub = availableSubs[i];
+        await supabase.from('rosters')
+          .update({ slot_type: 'sub', slot_number: inSub.slot_number })
+          .eq('id', out.id);
+        await supabase.from('rosters')
+          .update({ slot_type: 'starter', slot_number: out.slot_number })
+          .eq('id', inSub.id);
+        console.log(`  Auto-sub: ${out.players?.name} ← ${inSub.players?.name} (slot ${out.slot_number})`);
+      }
+
+      // DNF check: valid starters = original valid starters + newly swapped-in subs
+      const validStarters = starters.filter(r => !isInvalid(r)).length + swapCount;
+      if (validStarters < 4) {
+        await supabase.from('tournament_memberships')
+          .update({ is_dnf: true })
+          .eq('tournament_id', ft.id)
+          .eq('user_id', userId);
+        console.log(`  DNF: user ${userId} — only ${validStarters} valid starters after auto-sub`);
+      }
+    }
+  }
+}
+
 // ─── Roster snapshot ──────────────────────────────────────────────────────────
 
 async function snapshotRostersIfNewRound(pgaTournamentId) {
@@ -125,6 +200,11 @@ async function snapshotRostersIfNewRound(pgaTournamentId) {
 
     for (const round of rounds) {
       if (snapped.has(round)) continue;
+      // Before snapshotting R3+, auto-sub any cut starters that the user
+      // hasn't manually resolved. This is idempotent — if no cut starters
+      // remain in starter slots, it's a no-op.
+      if (round >= 3) await autoSubCutPlayers(pgaTournamentId);
+
       const { data: rosters } = await supabase
         .from('rosters')
         .select('user_id, player_id, slot_type')

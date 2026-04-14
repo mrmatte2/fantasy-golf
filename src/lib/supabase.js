@@ -188,6 +188,14 @@ export async function getTournamentMembers(tournamentId) {
     .eq('tournament_id', tournamentId);
 }
 
+export async function setMemberDnf(tournamentId, userId, isDnf) {
+  return await supabase
+    .from('tournament_memberships')
+    .update({ is_dnf: isDnf })
+    .eq('tournament_id', tournamentId)
+    .eq('user_id', userId);
+}
+
 // ─── Tournament Players (per-fantasy-tournament pricing) ─────────────────────
 
 export async function getTournamentPlayers(tournamentId) {

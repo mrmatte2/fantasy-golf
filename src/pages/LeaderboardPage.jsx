@@ -74,14 +74,20 @@ export default function LeaderboardPage() {
 
     const lockedRounds = new Set((snapshots || []).map(s => s.round));
 
+    // Determine the cut round (highest round with a snapshot that is ≤ 2,
+    // i.e. the round after which the cut happened). DNF only applies from R3+.
+    const cutRound = Math.max(0, ...[...lockedRounds].filter(r => r <= 2));
+
     const board = members.map(member => {
       let totalVsPar = 0;
       const roundBreakdown = [];
+      const isDnf = !!member.is_dnf;
 
       for (const round of roundsWithScores) {
         const isLocked = lockedRounds.has(round);
+        // DNF teams score nothing from R3 onward
+        const isDnfRound = isDnf && cutRound > 0 && round > cutRound;
 
-        // Locked rounds use the snapshot; live rounds use the current roster
         const startersForRound = isLocked
           ? (snapshots || []).filter(s => s.user_id === member.user_id && s.round === round && s.slot_type === 'starter')
           : (rosters || []).filter(r => r.user_id === member.user_id && r.slot_type === 'starter' && r.is_active);
@@ -90,7 +96,6 @@ export default function LeaderboardPage() {
           ? (snapshots || []).filter(s => s.user_id === member.user_id && s.round === round && s.slot_type === 'sub')
           : [];
 
-        // Fallback: if snapshot was empty for a locked round, use current roster
         const effectiveStarters = startersForRound.length > 0
           ? startersForRound
           : (rosters || []).filter(r => r.user_id === member.user_id && r.slot_type === 'starter' && r.is_active);
@@ -109,15 +114,16 @@ export default function LeaderboardPage() {
 
         const scored = starterScores.filter(s => s.holesPlayed > 0).sort((a, b) => a.roundTotal - b.roundTotal);
         const best4 = scored.slice(0, 4);
-        const roundVsPar = best4.reduce((sum, s) => sum + s.roundTotal, 0);
-        totalVsPar += roundVsPar;
-        roundBreakdown.push({ round, roundVsPar, starterScores, subScores, best4, isLocked });
+        const roundVsPar = isDnfRound ? null : best4.reduce((sum, s) => sum + s.roundTotal, 0);
+        if (!isDnfRound) totalVsPar += roundVsPar;
+        roundBreakdown.push({ round, roundVsPar, starterScores, subScores, best4, isLocked, isDnfRound });
       }
 
       return {
         userId: member.user_id,
         username: member.profiles?.username,
         teamName: member.team_name,
+        isDnf,
         totalVsPar: roundsWithScores.length > 0 ? totalVsPar : null,
         roundBreakdown,
       };
@@ -218,12 +224,15 @@ export default function LeaderboardPage() {
                   <div className="flex items-center gap-4">
                     <div className="flex items-center justify-center w-6">{positionIcon(position)}</div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-display font-semibold text-masters-cream">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`font-display font-semibold ${entry.isDnf ? 'text-white/40' : 'text-masters-cream'}`}>
                           {entry.teamName || entry.username}
                         </span>
                         {isMe && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-masters-gold/20 text-masters-gold border border-masters-gold/30">You</span>
+                        )}
+                        {entry.isDnf && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-400 border border-red-800/40">DNF</span>
                         )}
                       </div>
                       {/* Per-round sub-scores shown under the team name */}
@@ -290,8 +299,8 @@ export default function LeaderboardPage() {
                               : <span className="text-xs text-white/20">· in progress</span>
                             }
                             {rb.isLocked && (
-                              <span className={`ml-auto font-mono text-sm font-bold ${vsParClass(rb.roundVsPar)}`}>
-                                {formatVsPar(rb.roundVsPar)}
+                              <span className={`ml-auto font-mono text-sm font-bold ${rb.isDnfRound ? 'text-red-500/60' : vsParClass(rb.roundVsPar)}`}>
+                                {rb.isDnfRound ? 'DNF' : formatVsPar(rb.roundVsPar)}
                               </span>
                             )}
                           </div>
