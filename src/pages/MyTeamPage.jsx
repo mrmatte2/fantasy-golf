@@ -115,7 +115,7 @@ function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubCl
               <div className="text-xs text-white/30">{holesPlayed} holes</div>
             </div>
           )}
-          {!isLocked && (
+          {!isLocked && !isSub && (
             <button onClick={() => onSubClick(rosterEntry)}
               className={`p-1.5 rounded-lg transition-colors ${
                 needsSub
@@ -368,13 +368,17 @@ export default function MyTeamPage() {
               {subs.length === 0 && <p className="text-white/30 text-sm text-center py-4">No substitutes available</p>}
               {subs
                 .sort((a, b) => {
-                  // survivors first
                   const aOk = a.players?.made_cut && !a.players?.is_withdrawn;
                   const bOk = b.players?.made_cut && !b.players?.is_withdrawn;
                   return bOk - aOk;
                 })
                 .map(sub => {
                   const survived = sub.players?.made_cut && !sub.players?.is_withdrawn;
+                  const subRoundScores = currentRound > 0
+                    ? (scores[sub.player_id] || []).filter(s => s.round === currentRound)
+                    : [];
+                  const subRoundTotal = subRoundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
+                  const subHolesPlayed = subRoundScores.length;
                   return (
                     <button key={sub.id} onClick={() => survived && handleSub(subModal.outEntry, sub)}
                       disabled={!survived}
@@ -383,15 +387,27 @@ export default function MyTeamPage() {
                           ? 'border-white/10 hover:border-masters-gold/40 hover:bg-masters-gold/5'
                           : 'border-red-900/30 bg-red-900/10 opacity-50 cursor-not-allowed'
                       }`}>
-                      <div className="flex items-center gap-2">
-                        <span className={`font-medium text-sm ${survived ? 'text-masters-cream' : 'text-red-300/70 line-through'}`}>
-                          {sub.players?.name}
-                        </span>
-                        {!survived && <span className="badge-cut text-xs">CUT</span>}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-medium text-sm ${survived ? 'text-masters-cream' : 'text-red-300/70 line-through'}`}>
+                            {sub.players?.name}
+                          </span>
+                        </div>
+                        {currentRound > 0 && subHolesPlayed > 0 && (
+                          <div className="text-right shrink-0">
+                            <span className={`font-mono font-bold text-sm ${vsParClass(subRoundTotal)}`}>
+                              {formatVsPar(subRoundTotal)}
+                            </span>
+                            <span className="text-xs text-white/30 ml-1">({subHolesPlayed})</span>
+                          </div>
+                        )}
                       </div>
-                      <div className="text-xs text-white/40 mt-0.5">
-                        #{sub.players?.world_ranking} WR · £{sub.players?.price_override ?? sub.players?.price}
-                        {survived && <span className="ml-2 text-green-400">✓ Made cut</span>}
+                      <div className="text-xs text-white/40 mt-0.5 flex items-center gap-2 flex-wrap">
+                        <span>#{sub.players?.world_ranking} WR · £{sub.players?.price_override ?? sub.players?.price}</span>
+                        {survived
+                          ? <span className="text-green-400">✓ Made cut</span>
+                          : <span className="text-red-400">✗ Missed cut</span>
+                        }
                       </div>
                     </button>
                   );
