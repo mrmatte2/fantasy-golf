@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { getTournaments, getUserMemberships, joinTournament } from '../lib/supabase';
-import { Trophy, LogIn, ChevronRight, Lock, Unlock, Settings, KeyRound, Clock, CheckCircle2 } from 'lucide-react';
+import { Trophy, LogIn, ChevronRight, Lock, Unlock, Settings, KeyRound, Clock, CheckCircle2, Eye } from 'lucide-react';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -75,6 +75,10 @@ function TournamentCard({ t, membership, onJoin, onEnter }) {
           {joined ? (
             <button onClick={onEnter} className="btn-primary flex items-center gap-2 text-sm">
               {past ? 'Results' : 'Enter'} <ChevronRight size={14} />
+            </button>
+          ) : (t.is_locked || past) ? (
+            <button onClick={onEnter} className="btn-secondary flex items-center gap-2 text-sm">
+              <Eye size={14} /> View
             </button>
           ) : t.draft_open ? (
             <button onClick={onJoin} className="btn-secondary flex items-center gap-2 text-sm">
