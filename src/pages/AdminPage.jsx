@@ -1073,13 +1073,23 @@ function ScoresTab() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    getPgaTournaments().then(({ data }) => setPgaTournaments(data || []));
-    getPlayers().then(({ data }) => setPlayers(data || []));
+    getPgaTournaments().then(({ data }) =>
+      setPgaTournaments((data || []).filter(t => t.sync_enabled))
+    );
   }, []);
 
   useEffect(() => {
-    if (!selectedPgaId) return;
+    if (!selectedPgaId) { setPlayers([]); return; }
     getPgaHolePars(selectedPgaId).then(({ data }) => setPars(data || []));
+    getPgaField(selectedPgaId).then(({ data }) => {
+      const fieldPlayers = (data || [])
+        .filter(fp => fp.is_in_field)
+        .map(fp => fp.players)
+        .filter(Boolean)
+        .sort((a, b) => (a.world_ranking ?? 999) - (b.world_ranking ?? 999));
+      setPlayers(fieldPlayers);
+      setSelectedPlayer('');
+    });
   }, [selectedPgaId]);
 
   useEffect(() => {
@@ -1116,10 +1126,10 @@ function ScoresTab() {
         <div className="flex gap-3 mb-6 flex-wrap">
           <div className="flex-1 min-w-40">
             <label className="label">PGA Event</label>
-            <select value={selectedPgaId} onChange={e => { setSelectedPgaId(e.target.value); setSelectedPlayer(''); }}
+            <select value={selectedPgaId} onChange={e => setSelectedPgaId(e.target.value)}
               className="input appearance-none">
               <option value="">Select PGA event…</option>
-              {pgaTournaments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {pgaTournaments.map(t => <option key={t.id} value={t.id}>{t.name} {t.year ? `(${t.year})` : ''}</option>)}
             </select>
           </div>
           <div className="flex-1 min-w-40">
