@@ -1143,17 +1143,26 @@ function ScoresTab() {
               placeholder={selectedPgaId ? 'Search player…' : 'Select an event first'}
               disabled={!selectedPgaId}
             />
-            {playerSearch && (
-              <select size={5} value={selectedPlayer}
-                onChange={e => { setSelectedPlayer(e.target.value); setPlayerSearch(players.find(p => p.id === e.target.value)?.name ?? ''); }}
-                className="input w-full appearance-none p-0 overflow-y-auto">
-                {players
-                  .filter(p => p.name.toLowerCase().includes(playerSearch.toLowerCase()))
-                  .map(p => (
-                    <option key={p.id} value={p.id} className="px-3 py-1.5">{p.name}</option>
+            {playerSearch && !selectedPlayer && (() => {
+              const matches = players.filter(p => p.name.toLowerCase().includes(playerSearch.toLowerCase()));
+              return matches.length > 0 ? (
+                <div className="border border-white/15 rounded-lg bg-masters-dark overflow-hidden max-h-48 overflow-y-auto">
+                  {matches.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        setSelectedPlayer(p.id);
+                        setPlayerSearch(p.name);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-masters-cream hover:bg-masters-gold/10 transition-colors border-b border-white/5 last:border-0">
+                      {p.name}
+                    </button>
                   ))}
-              </select>
-            )}
+                </div>
+              ) : null;
+            })()}
             {selectedPlayer && (
               <div className="text-xs text-masters-gold/70 px-1">
                 ✓ {players.find(p => p.id === selectedPlayer)?.name}
