@@ -119,6 +119,12 @@ export default function LeaderboardPage() {
         roundBreakdown.push({ round, roundVsPar, starterScores, subScores, best4, isLocked, isDnfRound });
       }
 
+      // Pre-game roster: used when tournament is locked but no scores yet
+      const r1Snapshot = (snapshots || []).filter(s => s.user_id === member.user_id && s.round === 1);
+      const lockedRoster = r1Snapshot.length > 0
+        ? r1Snapshot
+        : (rosters || []).filter(r => r.user_id === member.user_id && r.is_active);
+
       return {
         userId: member.user_id,
         username: member.profiles?.username,
@@ -126,6 +132,7 @@ export default function LeaderboardPage() {
         isDnf,
         totalVsPar: roundsWithScores.length > 0 ? totalVsPar : null,
         roundBreakdown,
+        lockedRoster,
       };
     });
 
@@ -158,7 +165,9 @@ export default function LeaderboardPage() {
         <p className="text-white/40 text-sm mt-1">
           {tournament?.name}
           {completedRounds.length === 0
-            ? ' · Tournament hasn\'t started yet'
+            ? tournament?.is_locked
+              ? ' · Roster locked — waiting for R1 scores'
+              : ' · Tournament hasn\'t started yet'
             : ` · Through R${completedRounds[completedRounds.length - 1]} · Best 4 of 5 starters count`}
         </p>
       </div>
@@ -245,7 +254,7 @@ export default function LeaderboardPage() {
                   </div>
 
                   <div className="flex items-center gap-4">
-                    {completedRounds.length > 0 && (
+                    {(completedRounds.length > 0 || tournament?.is_locked) && (
                       <div className="text-right">
                         <div className={`font-mono text-xl font-bold ${
                           entry.displayScore !== null ? vsParClass(entry.displayScore) : 'text-white/20'
@@ -262,6 +271,34 @@ export default function LeaderboardPage() {
 
                 {isExpanded && (
                   <div className="px-4 pb-4 border-t border-white/5">
+                    {/* Pre-game view: locked but no scores yet */}
+                    {entry.roundBreakdown.length === 0 && tournament?.is_locked && (
+                      <div className="mt-3 rounded-lg border border-white/8 overflow-hidden">
+                        <div className="px-3 py-2 bg-white/5 border-b border-white/8">
+                          <span className="text-xs font-semibold text-white/50 tracking-wide">Locked roster · R1</span>
+                        </div>
+                        <div className="px-3 py-2 space-y-0.5">
+                          <div className="text-xs text-white/20 uppercase tracking-wider mb-1">Starters</div>
+                          {entry.lockedRoster.filter(r => r.slot_type === 'starter').map(r => (
+                            <div key={r.player_id} className="flex justify-between text-xs py-0.5">
+                              <span className="text-masters-cream">{r.players?.name}</span>
+                              <span className="text-white/20 font-mono">—</span>
+                            </div>
+                          ))}
+                          {entry.lockedRoster.some(r => r.slot_type === 'sub') && (
+                            <>
+                              <div className="text-xs text-white/20 uppercase tracking-wider mt-2 mb-1">Substitutes</div>
+                              {entry.lockedRoster.filter(r => r.slot_type === 'sub').map(r => (
+                                <div key={r.player_id} className="flex justify-between text-xs py-0.5">
+                                  <span className="text-white/30">{r.players?.name}</span>
+                                  <span className="text-white/20 font-mono">—</span>
+                                </div>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {/* If viewing a specific round, show just that round detail */}
                     {selectedRound !== null && selectedRb ? (
                       <div className="mt-3 rounded-lg border border-white/8 overflow-hidden">
