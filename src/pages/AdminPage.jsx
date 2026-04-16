@@ -1065,6 +1065,7 @@ function ScoresTab() {
   const [pgaTournaments, setPgaTournaments] = useState([]);
   const [selectedPgaId, setSelectedPgaId] = useState('');
   const [players, setPlayers] = useState([]);
+  const [playerSearch, setPlayerSearch] = useState('');
   const [pars, setPars] = useState([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
   const [selectedRound, setSelectedRound] = useState(1);
@@ -1089,6 +1090,7 @@ function ScoresTab() {
         .sort((a, b) => (a.world_ranking ?? 999) - (b.world_ranking ?? 999));
       setPlayers(fieldPlayers);
       setSelectedPlayer('');
+      setPlayerSearch('');
     });
   }, [selectedPgaId]);
 
@@ -1132,13 +1134,31 @@ function ScoresTab() {
               {pgaTournaments.map(t => <option key={t.id} value={t.id}>{t.name} {t.year ? `(${t.year})` : ''}</option>)}
             </select>
           </div>
-          <div className="flex-1 min-w-40">
+          <div className="flex-1 min-w-48 space-y-1.5">
             <label className="label">Player</label>
-            <select value={selectedPlayer} onChange={e => setSelectedPlayer(e.target.value)}
-              className="input appearance-none" disabled={!selectedPgaId}>
-              <option value="">Select player…</option>
-              {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <input
+              value={playerSearch}
+              onChange={e => { setPlayerSearch(e.target.value); setSelectedPlayer(''); }}
+              className="input"
+              placeholder={selectedPgaId ? 'Search player…' : 'Select an event first'}
+              disabled={!selectedPgaId}
+            />
+            {playerSearch && (
+              <select size={5} value={selectedPlayer}
+                onChange={e => { setSelectedPlayer(e.target.value); setPlayerSearch(players.find(p => p.id === e.target.value)?.name ?? ''); }}
+                className="input w-full appearance-none p-0 overflow-y-auto">
+                {players
+                  .filter(p => p.name.toLowerCase().includes(playerSearch.toLowerCase()))
+                  .map(p => (
+                    <option key={p.id} value={p.id} className="px-3 py-1.5">{p.name}</option>
+                  ))}
+              </select>
+            )}
+            {selectedPlayer && (
+              <div className="text-xs text-masters-gold/70 px-1">
+                ✓ {players.find(p => p.id === selectedPlayer)?.name}
+              </div>
+            )}
           </div>
           <div>
             <label className="label">Round</label>
