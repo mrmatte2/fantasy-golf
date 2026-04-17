@@ -1,25 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useTournament } from '../../hooks/useTournament';
-import { signOut } from '../../lib/supabase';
+import { signOut, getUserMembership } from '../../lib/supabase';
 import { Trophy, Users, BarChart3, Settings, LogOut, Menu, X, Lock, Unlock, ChevronLeft, BookOpen } from 'lucide-react';
 
 export default function Navbar() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const { id: tournamentId } = useParams();
   const { tournament } = useTournament(tournamentId);
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMember, setIsMember] = useState(true); // optimistic default
+
+  useEffect(() => {
+    if (!tournamentId || !user?.id) return;
+    getUserMembership(tournamentId, user.id).then(({ data }) => setIsMember(!!data));
+  }, [tournamentId, user?.id]);
 
   const inTournament = !!tournamentId;
+  // Hide Draft + My Team for non-members viewing a locked tournament
+  const viewOnly = inTournament && tournament?.is_locked && !isMember;
 
   // Nav items change depending on whether we're inside a tournament
   const navItems = inTournament ? [
     { path: `/tournament/${tournamentId}/leaderboard`, label: 'Leaderboard', icon: Trophy },
-    { path: `/tournament/${tournamentId}/draft`,       label: 'Draft',        icon: Users },
-    { path: `/tournament/${tournamentId}/my-team`,     label: 'My Team',      icon: BarChart3 },
+    ...(!viewOnly ? [
+      { path: `/tournament/${tournamentId}/draft`,   label: 'Draft',   icon: Users },
+      { path: `/tournament/${tournamentId}/my-team`, label: 'My Team', icon: BarChart3 },
+    ] : []),
     { path: '/rules',                                  label: 'Rules',        icon: BookOpen },
     ...(profile?.is_admin ? [{ path: '/admin', label: 'Admin', icon: Settings }] : []),
   ] : [
