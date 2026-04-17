@@ -2,7 +2,7 @@ name: Sync Scores
 
 on:
   schedule:
-    - cron: '*/15 * * * *'   # every 15 minutes
+    - cron: '0 4-23 * * *'   # hourly fallback during active hours (04:00–23:00 UTC = 06:00–01:00 CEST)
   workflow_dispatch:           # manual trigger from GitHub Actions UI
 
 jobs:
