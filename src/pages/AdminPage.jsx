@@ -849,7 +849,10 @@ function TournamentsTab({ currentUserId }) {
                   onChange={e => setForm(f => ({ ...f, pga_tournament_id: e.target.value }))}
                   className="input appearance-none">
                   <option value="">None (standalone)</option>
-                  {pgaEvents.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  {[...pgaEvents]
+                    .filter(e => !e.sync_start_date || e.sync_start_date > new Date().toISOString().slice(0, 10))
+                    .sort((a, b) => (a.sync_start_date || '9999').localeCompare(b.sync_start_date || '9999'))
+                    .map(e => <option key={e.id} value={e.id}>{e.name}{e.sync_start_date ? ` (${e.sync_start_date})` : ''}</option>)}
                 </select>
               </div>
               <div>
