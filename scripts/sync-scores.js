@@ -59,21 +59,14 @@ function isWithinRange(start, end) {
 // ─── Shared DB helpers ────────────────────────────────────────────────────────
 
 async function loadHolePars(pgaTournamentId) {
-  // Prefer per-tournament pars, fall back to global hole_pars during migration
-  const { data: pgaPars } = await supabase
+  const { data, error } = await supabase
     .from('pga_hole_pars')
     .select('hole, par')
     .eq('pga_tournament_id', pgaTournamentId)
     .order('hole');
-  if (pgaPars?.length) {
-    const map = {};
-    for (const row of pgaPars) map[row.hole] = row.par;
-    return map;
-  }
-  const { data, error } = await supabase.from('hole_pars').select('hole, par').order('hole');
-  if (error) throw new Error(`Failed to load hole_pars: ${error.message}`);
+  if (error) throw new Error(`Failed to load pga_hole_pars: ${error.message}`);
   const map = {};
-  for (const row of data) map[row.hole] = row.par;
+  for (const row of data || []) map[row.hole] = row.par;
   return map;
 }
 
