@@ -160,6 +160,7 @@ export default function MyTeamPage() {
   const [pars, setPars] = useState([]);
   const [membership, setMembership] = useState(undefined);
   const [lockedRounds, setLockedRounds] = useState([]);
+  const [snapshots, setSnapshots] = useState([]);
   const [cutStatus, setCutStatus] = useState({});
   const [loading, setLoading] = useState(true);
   const [subModal, setSubModal] = useState(null);
@@ -181,19 +182,27 @@ export default function MyTeamPage() {
 
     const pgaTournamentId = ft?.pga_tournament_id;
     const rosterData = rst || [];
+    const snapshotData = snapData || [];
     setRoster(rosterData);
     setMembership(mem ?? null);
-    setLockedRounds([...new Set((snapData || []).map(s => s.round))].sort());
+    setSnapshots(snapshotData);
+    setLockedRounds([...new Set(snapshotData.map(s => s.round))].sort());
     setCutStatus(await getTournamentCutStatus(pgaTournamentId));
+
+    // Load scores for all players: current roster + anyone in snapshots (may differ after swaps)
+    const allPlayerIds = [...new Set([
+      ...rosterData.map(r => r.player_id),
+      ...snapshotData.map(s => s.player_id),
+    ])];
 
     const [holeParsResult, ...scoreResponses] = await Promise.all([
       getHolePars(pgaTournamentId),
-      ...rosterData.map(r => getPlayerScores(r.player_id, pgaTournamentId ?? tournamentId)),
+      ...allPlayerIds.map(pid => getPlayerScores(pid, pgaTournamentId ?? tournamentId)),
     ]);
 
     setPars(holeParsResult.data || []);
     setScores(Object.fromEntries(
-      scoreResponses.map(({ data }, i) => [rosterData[i].player_id, data || []])
+      scoreResponses.map(({ data }, i) => [allPlayerIds[i], data || []])
     ));
     setLoading(false);
   }, [user.id, tournamentId]);
@@ -221,9 +230,43 @@ export default function MyTeamPage() {
       .slice(0, 4).map(s => s.player_id)
   );
 
-  const teamTotal = startersWithScores
-    .filter(s => topFourIds.has(s.player_id))
-    .reduce((sum, s) => sum + s.roundTotal, 0);
+  // Compute best-4-of-5 for any set of player IDs in a given round
+  function computeRoundBest4(playerIds, round) {
+    const totals = playerIds
+      .map(pid => {
+        const roundScores = (scores[pid] || []).filter(s => s.round === round);
+        if (!roundScores.length) return null;
+        return roundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
+      })
+      .filter(t => t !== null)
+      .sort((a, b) => a - b)
+      .slice(0, 4);
+    return totals.length > 0 ? totals.reduce((sum, t) => sum + t, 0) : null;
+  }
+
+  const currentStarterIds = starters.map(r => r.player_id);
+  const allScoreRounds = [...new Set(Object.values(scores).flat().map(s => s.round))].sort();
+
+  // Per-round breakdown: locked rounds use snapshot, current round uses current roster
+  const roundBreakdown = allScoreRounds.map(round => {
+    const isLocked = lockedRounds.includes(round);
+    if (isLocked) {
+      const snapStarterIds = snapshots
+        .filter(s => s.user_id === user.id && s.round === round && s.slot_type === 'starter')
+        .map(s => s.player_id);
+      const lockedScore = computeRoundBest4(snapStarterIds, round);
+      const currentScore = computeRoundBest4(currentStarterIds, round);
+      const unchanged = snapStarterIds.length === currentStarterIds.length &&
+        snapStarterIds.every(id => currentStarterIds.includes(id));
+      return { round, isLocked: true, lockedScore, currentScore, unchanged };
+    }
+    return { round, isLocked: false, liveScore: computeRoundBest4(currentStarterIds, round) };
+  });
+
+  const teamTotal = roundBreakdown
+    .filter(r => r.isLocked)
+    .reduce((sum, r) => sum + (r.lockedScore ?? 0), 0)
+    + (roundBreakdown.find(r => !r.isLocked)?.liveScore ?? 0);
 
   async function openSubModal(outEntry) {
     setSubModal({ outEntry });
@@ -302,9 +345,11 @@ export default function MyTeamPage() {
             {currentRound > 0 ? ` · Round ${currentRound} in progress` : ' · Pre-tournament'}
           </p>
         </div>
-        {currentRound > 0 && (
+        {roundBreakdown.length > 0 && (
           <div className="card-dark text-center min-w-32">
-            <div className="text-xs text-white/40 uppercase tracking-wider mb-1">R{currentRound} Score</div>
+            <div className="text-xs text-white/40 uppercase tracking-wider mb-1">
+              {roundBreakdown.every(r => r.isLocked) ? 'Tournament' : `R${currentRound}`} Score
+            </div>
             <div className={`font-mono text-2xl font-bold ${vsParClass(teamTotal)}`}>{formatVsPar(teamTotal)}</div>
             <div className="text-xs text-white/30 mt-0.5">best 4 of 5</div>
           </div>
@@ -348,6 +393,48 @@ export default function MyTeamPage() {
           </div>
         );
       })()}
+
+      {roundBreakdown.length > 0 && (
+        <div className="mb-6 animate-fade-up-delay-1">
+          <h2 className="font-display font-semibold text-masters-cream mb-3">Round Scores</h2>
+          <div className="space-y-2">
+            {roundBreakdown.map(rd => (
+              <div key={rd.round} className="rounded-xl border border-white/10 bg-white/3 px-4 py-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-display font-semibold text-masters-cream text-sm">Round {rd.round}</span>
+                    {rd.isLocked
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-masters-gold/15 text-masters-gold border border-masters-gold/30 flex items-center gap-1"><Lock size={9} /> Locked</span>
+                      : <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/30 text-green-400 border border-green-800/40">In progress</span>
+                    }
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {rd.isLocked ? (
+                      <>
+                        <div className="text-right">
+                          <div className="text-xs text-white/40 mb-0.5">Locked score</div>
+                          <div className={`font-mono font-bold ${vsParClass(rd.lockedScore)}`}>{formatVsPar(rd.lockedScore)}</div>
+                        </div>
+                        {!rd.unchanged && rd.currentScore !== null && (
+                          <div className="text-right">
+                            <div className="text-xs text-white/40 mb-0.5">Current selection</div>
+                            <div className={`font-mono font-bold ${vsParClass(rd.currentScore)}`}>{formatVsPar(rd.currentScore)}</div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-right">
+                        <div className="text-xs text-white/40 mb-0.5">Current selection</div>
+                        <div className={`font-mono font-bold ${vsParClass(rd.liveScore)}`}>{formatVsPar(rd.liveScore)}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-6 animate-fade-up-delay-1">
         <h2 className="font-display font-semibold text-masters-cream mb-3 flex items-center gap-2">
