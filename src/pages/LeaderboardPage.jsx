@@ -39,11 +39,12 @@ export default function LeaderboardPage() {
     if (tournamentId) loadLeaderboard();
   }, [tournamentId]);
 
-  // Set default selected round to the latest completed round once data loads
+  // Default to Total view when multiple rounds exist, otherwise show R1
   useEffect(() => {
-    if (completedRounds.length > 0 && selectedRound === null) {
-      setSelectedRound(completedRounds[completedRounds.length - 1]);
+    if (completedRounds.length === 1) {
+      setSelectedRound(1);
     }
+    // 2+ rounds: leave selectedRound as null (Total)
   }, [completedRounds]);
 
   async function loadLeaderboard() {
