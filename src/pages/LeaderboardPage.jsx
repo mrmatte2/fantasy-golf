@@ -114,9 +114,10 @@ export default function LeaderboardPage() {
         const subScores = subsForRound.map(toPlayerScore);
 
         const scored = starterScores.filter(s => s.holesPlayed > 0).sort((a, b) => a.roundTotal - b.roundTotal);
-        const best4 = scored.slice(0, 4);
-        const roundVsPar = isDnfRound ? null : best4.reduce((sum, s) => sum + s.roundTotal, 0);
-        if (!isDnfRound) totalVsPar += roundVsPar;
+        // 0 started → null; 1 started → count it; 2+ started → drop worst 1, count rest (max 4)
+        const best4 = scored.length <= 1 ? scored : scored.slice(0, Math.min(4, scored.length - 1));
+        const roundVsPar = isDnfRound ? null : (best4.length > 0 ? best4.reduce((sum, s) => sum + s.roundTotal, 0) : null);
+        if (!isDnfRound && roundVsPar !== null) totalVsPar += roundVsPar;
         roundBreakdown.push({ round, roundVsPar, starterScores, subScores, best4, isLocked, isDnfRound });
       }
 
