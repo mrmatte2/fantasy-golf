@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTournament } from '../hooks/useTournament';
 import { getAllRosters, getTournament, getTournamentMembers, getRoundSnapshots, getScoresForPlayers, getHolePars } from '../lib/supabase';
-import { Trophy, Medal, Star, ChevronRight } from 'lucide-react';
+import { Trophy, Medal, Star, ChevronRight, RefreshCw } from 'lucide-react';
 
 function formatVsPar(vp) {
   if (vp === null || vp === undefined) return '—';
@@ -34,6 +34,7 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [selectedRound, setSelectedRound] = useState(null); // null = total view
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (tournamentId) loadLeaderboard();
@@ -162,16 +163,25 @@ export default function LeaderboardPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
-      <div className="mb-8 animate-fade-up">
-        <h1 className="font-display text-3xl font-bold text-masters-cream">Leaderboard</h1>
-        <p className="text-white/40 text-sm mt-1">
-          {tournament?.name}
-          {completedRounds.length === 0
-            ? tournament?.is_locked
-              ? ' · Roster locked — waiting for R1 scores'
-              : ' · Tournament hasn\'t started yet'
-            : ` · Through R${completedRounds[completedRounds.length - 1]} · Best 4 of 5 starters count`}
-        </p>
+      <div className="mb-8 animate-fade-up flex items-start justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-bold text-masters-cream">Leaderboard</h1>
+          <p className="text-white/40 text-sm mt-1">
+            {tournament?.name}
+            {completedRounds.length === 0
+              ? tournament?.is_locked
+                ? ' · Roster locked — waiting for R1 scores'
+                : ' · Tournament hasn\'t started yet'
+              : ` · Through R${completedRounds[completedRounds.length - 1]} · Best 4 of 5 starters count`}
+          </p>
+        </div>
+        <button
+          onClick={async () => { setRefreshing(true); await loadLeaderboard(); setRefreshing(false); }}
+          disabled={refreshing}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-white/50 hover:text-masters-cream hover:bg-white/5 transition-colors disabled:opacity-40">
+          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+          {refreshing ? 'Updating…' : 'Refresh'}
+        </button>
       </div>
 
       {completedRounds.length > 0 && (
