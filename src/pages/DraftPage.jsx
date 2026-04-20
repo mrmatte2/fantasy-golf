@@ -3,57 +3,58 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTournament } from '../hooks/useTournament';
 import {
-  getTournamentPlayers, getTournamentPriceMap,
+  getTournamentPlayers,
   getUserRoster, addToRoster, removeFromRoster,
   getUserMembership, joinTournament, getTournamentCutStatus,
 } from '../lib/supabase';
+import { getTier, TIER_LIMITS, TIER_META } from '../lib/tiers';
 import { Search, Lock, Info, LogIn, KeyRound } from 'lucide-react';
 
 const MAX_STARTERS = 5;
 const MAX_SUBS = 3;
+const TIER_ORDER = ['S', 'A', 'B', 'C'];
 
-function PriceTag({ price }) {
-  return <span className="font-mono text-sm font-medium text-masters-gold">£{price?.toFixed(1)}</span>;
+function TierBadge({ worldRanking }) {
+  const tier = getTier(worldRanking);
+  const meta = TIER_META[tier];
+  return (
+    <span className={`text-xs font-bold px-1.5 py-0.5 rounded border ${meta.bg} ${meta.color}`}>
+      {tier}
+    </span>
+  );
 }
 
-function PlayerCard({ player, rosterEntry, onAdd, onRemove, canAdd, isLocked }) {
+function PlayerCard({ player, rosterEntry, onAdd, onRemove, tierLimitReached, isLocked }) {
   const isStarter = rosterEntry?.slot_type === 'starter';
   const isSub = rosterEntry?.slot_type === 'sub';
   const inRoster = !!rosterEntry;
-  const formStars = Math.round(player.form_score || 5);
 
   return (
-    <div className={`rounded-xl border transition-all duration-200 p-4 ${
+    <div className={`rounded-xl border transition-all duration-200 p-3 ${
       inRoster ? 'border-masters-gold/40 bg-masters-gold/8' : 'border-white/8 bg-white/3 hover:border-white/15 hover:bg-white/6'
     }`}>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-display font-semibold text-masters-cream text-sm">{player.name}</span>
             {player.is_withdrawn && <span className="badge-wd">WD</span>}
             {player.made_cut === false && !player.is_withdrawn && <span className="badge-cut">CUT</span>}
             {isStarter && <span className="badge-starter">Starter {rosterEntry?.slot_number}</span>}
             {isSub && <span className="badge-sub">Sub {rosterEntry?.slot_number}</span>}
           </div>
-          <div className="flex items-center gap-3 text-xs text-white/40">
+          <div className="flex items-center gap-3 text-xs text-white/40 mt-0.5">
             <span>#{player.world_ranking} WR</span>
             <span>{player.country}</span>
             <span>{player.odds_fractional}</span>
           </div>
-          <div className="flex items-center gap-0.5 mt-2">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < formStars ? 'bg-masters-gold' : 'bg-white/10'}`} />
-            ))}
-            <span className="text-xs text-white/30 ml-1">form</span>
-          </div>
         </div>
-        <div className="flex flex-col items-end gap-2 shrink-0">
-          <PriceTag price={player.price_override ?? player.price} />
+        <div className="flex items-center gap-2 shrink-0">
           {!isLocked && (
             inRoster ? (
               <button onClick={() => onRemove(player)} className="btn-danger text-xs px-3 py-1">Remove</button>
             ) : (
-              <button onClick={() => onAdd(player)} disabled={!canAdd}
+              <button onClick={() => onAdd(player)} disabled={tierLimitReached}
+                title={tierLimitReached ? 'Tier limit reached' : undefined}
                 className="btn-secondary text-xs px-3 py-1 disabled:opacity-30">+ Add</button>
             )
           )}
@@ -71,13 +72,12 @@ export default function DraftPage() {
 
   const [players, setPlayers] = useState([]);
   const [roster, setRoster] = useState([]);
-  const [membership, setMembership] = useState(undefined); // undefined = loading
+  const [membership, setMembership] = useState(undefined);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('price');
+  const [sortBy, setSortBy] = useState('ranking');
   const [hideCut, setHideCut] = useState(true);
   const [slotModal, setSlotModal] = useState(null);
-  const [currentBudget, setCurrentBudget] = useState(0);
 
   // Join flow state
   const [joinTeamName, setJoinTeamName] = useState('');
@@ -85,31 +85,31 @@ export default function DraftPage() {
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState('');
 
-  const budget = tournament?.budget ?? 100;
   const pgaTournamentId = tournament?.pga_tournament_id ?? null;
   const isLocked = tournament?.is_locked || !tournament?.draft_open;
   const starters = roster.filter(r => r.slot_type === 'starter' && r.is_active);
   const subs = roster.filter(r => r.slot_type === 'sub' && r.is_active);
 
+  // Tier usage across entire roster (starters + subs combined)
+  const tierCounts = { S: 0, A: 0, B: 0, C: 0 };
+  for (const r of [...starters, ...subs]) {
+    tierCounts[getTier(r.players?.world_ranking)]++;
+  }
+
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [{ data: pls }, { data: rst }, { data: mem }, priceMap, cutStatus] = await Promise.all([
+    const [{ data: pls }, { data: rst }, { data: mem }, cutStatus] = await Promise.all([
       getTournamentPlayers(tournamentId),
       getUserRoster(user.id, tournamentId),
       getUserMembership(tournamentId, user.id),
-      getTournamentPriceMap(tournamentId),
       getTournamentCutStatus(pgaTournamentId),
     ]);
-    // Merge per-tournament cut status into players
     const playersWithCut = (pls || []).map(p => ({ ...p, made_cut: cutStatus[p.id] ?? null }));
     setPlayers(playersWithCut);
     setRoster(rst || []);
     setMembership(mem ?? null);
-    // Use tournament-specific prices for budget calculation
-    const spent = (rst || []).reduce((sum, r) => sum + (priceMap[r.player_id] ?? r.players?.price ?? 0), 0);
-    setCurrentBudget(budget - spent);
     setLoading(false);
-  }, [user.id, tournamentId, budget, pgaTournamentId]);
+  }, [user.id, tournamentId, pgaTournamentId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -127,8 +127,6 @@ export default function DraftPage() {
   }
 
   async function handleAdd(player, slotType) {
-    const price = player.price;
-    if (price > currentBudget) { alert('Not enough budget!'); return; }
     if (slotType === 'starter' && starters.length >= MAX_STARTERS) {
       if (subs.length >= MAX_SUBS) { alert('Roster is full (5 starters + 3 subs)'); return; }
       setSlotModal(player); return;
@@ -161,7 +159,6 @@ export default function DraftPage() {
     );
   }
 
-  // Not a member yet — show join prompt
   if (!membership) {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">
@@ -200,6 +197,7 @@ export default function DraftPage() {
   }
 
   const cutCount = players.filter(p => p.is_active && !p.is_withdrawn && p.made_cut === false).length;
+  const rosterMap = Object.fromEntries(roster.map(r => [r.player_id, r]));
 
   const filtered = players
     .filter(p => {
@@ -208,14 +206,14 @@ export default function DraftPage() {
       return p.name.toLowerCase().includes(q) || (p.country || '').toLowerCase().includes(q);
     })
     .sort((a, b) => {
-      if (sortBy === 'ranking') return a.world_ranking - b.world_ranking;
-      if (sortBy === 'odds') return a.odds_decimal - b.odds_decimal;
-      return (b.price_override ?? b.price) - (a.price_override ?? a.price);
+      if (sortBy === 'odds') return (a.odds_decimal ?? 999) - (b.odds_decimal ?? 999);
+      return (a.world_ranking ?? 999) - (b.world_ranking ?? 999);
     });
 
-  const rosterMap = Object.fromEntries(roster.map(r => [r.player_id, r]));
-  const totalSpent = budget - currentBudget;
-  const budgetPct = (totalSpent / budget) * 100;
+  // Group filtered players by tier
+  const playersByTier = {};
+  for (const tier of TIER_ORDER) playersByTier[tier] = [];
+  for (const p of filtered) playersByTier[getTier(p.world_ranking)].push(p);
 
   return (
     <div className="max-w-6xl mx-auto px-4 lg:h-[calc(100vh-64px)] lg:overflow-hidden flex flex-col">
@@ -236,24 +234,36 @@ export default function DraftPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 pb-4">
         {/* Roster summary */}
         <div className="lg:col-span-1 lg:overflow-y-auto space-y-4 animate-fade-up-delay-1">
+
+          {/* Tier usage */}
           <div className="card-dark">
-            <div className="flex justify-between items-baseline mb-2">
-              <span className="text-xs uppercase tracking-wider text-white/40">Budget</span>
-              <span className="font-mono text-lg font-bold text-masters-gold">
-                £{currentBudget.toFixed(1)}
-                <span className="text-white/30 text-sm font-normal"> / £{budget}</span>
-              </span>
+            <div className="flex justify-between items-baseline mb-3">
+              <span className="text-xs uppercase tracking-wider text-white/40">Tier Usage</span>
+              <span className="text-xs text-white/30">{roster.length}/8 picks</span>
             </div>
-            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-              <div className="h-full rounded-full bg-masters-gold transition-all duration-500"
-                style={{ width: `${Math.min(budgetPct, 100)}%` }} />
-            </div>
-            <div className="flex justify-between text-xs text-white/30 mt-1">
-              <span>Spent £{totalSpent.toFixed(1)}</span>
-              <span>{roster.length}/8 picks</span>
+            <div className="space-y-2">
+              {TIER_ORDER.map(tier => {
+                const meta = TIER_META[tier];
+                const count = tierCounts[tier];
+                const limit = TIER_LIMITS[tier];
+                const limitLabel = limit === Infinity ? '∞' : limit;
+                const full = count >= limit;
+                return (
+                  <div key={tier} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold w-5 ${meta.color}`}>{tier}</span>
+                      <span className="text-xs text-white/40">{meta.range}</span>
+                    </div>
+                    <span className={`text-xs font-mono font-medium ${full && limit !== Infinity ? 'text-masters-gold' : 'text-white/40'}`}>
+                      {count}/{limitLabel}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
+          {/* Starters */}
           <div className="card-dark">
             <h3 className="font-display font-semibold text-masters-cream mb-3 flex items-center justify-between">
               Starters <span className="text-xs font-body text-white/40">{starters.length}/{MAX_STARTERS}</span>
@@ -266,7 +276,7 @@ export default function DraftPage() {
                     <span className="text-sm text-masters-cream truncate">{r.players?.name}</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <PriceTag price={r.players?.price} />
+                    <TierBadge worldRanking={r.players?.world_ranking} />
                     {!isLocked && (
                       <button onClick={() => handleRemove(r.players)}
                         className="text-white/25 hover:text-red-400 transition-colors text-lg leading-none"
@@ -284,6 +294,7 @@ export default function DraftPage() {
             </div>
           </div>
 
+          {/* Subs */}
           <div className="card-dark">
             <h3 className="font-display font-semibold text-masters-cream mb-3 flex items-center justify-between">
               Substitutes <span className="text-xs font-body text-white/40">{subs.length}/{MAX_SUBS}</span>
@@ -296,7 +307,7 @@ export default function DraftPage() {
                     <span className="text-sm text-masters-cream truncate">{r.players?.name}</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <PriceTag price={r.players?.price} />
+                    <TierBadge worldRanking={r.players?.world_ranking} />
                     {!isLocked && (
                       <button onClick={() => handleRemove(r.players)}
                         className="text-white/25 hover:text-red-400 transition-colors text-lg leading-none"
@@ -316,11 +327,11 @@ export default function DraftPage() {
 
           <div className="text-xs text-white/30 flex items-start gap-1.5 px-1">
             <Info size={12} className="shrink-0 mt-0.5" />
-            Best 4 of your 5 starters count per round. Subs can replace starters between rounds.
+            Best 4 of your 5 starters count per round. At least 1 C-tier starter required for R1 &amp; R2.
           </div>
         </div>
 
-        {/* Player pool */}
+        {/* Player pool — grouped by tier */}
         <div className="lg:col-span-2 flex flex-col min-h-0 animate-fade-up-delay-2">
           <div className="flex gap-3 mb-4 flex-wrap shrink-0">
             <div className="flex-1 min-w-48 relative">
@@ -330,7 +341,6 @@ export default function DraftPage() {
             </div>
             <select value={sortBy} onChange={e => setSortBy(e.target.value)}
               className="input w-auto h-10 pr-8 appearance-none cursor-pointer">
-              <option value="price">Sort: Price</option>
               <option value="ranking">Sort: World Ranking</option>
               <option value="odds">Sort: Odds</option>
             </select>
@@ -346,22 +356,44 @@ export default function DraftPage() {
             )}
           </div>
 
-          <div className="space-y-2 flex-1 overflow-y-auto pr-1 min-h-0">
-            {filtered.map(player => (
-              <PlayerCard key={player.id} player={player} rosterEntry={rosterMap[player.id]}
-                onAdd={(p) => {
-                  if (starters.length >= MAX_STARTERS && subs.length >= MAX_SUBS) { alert('Roster is full'); return; }
-                  if (starters.length >= MAX_STARTERS) { handleSlotChoice(p, 'sub'); return; }
-                  handleAdd(p, 'starter');
-                }}
-                onRemove={handleRemove}
-                canAdd={
-                  (starters.length < MAX_STARTERS || subs.length < MAX_SUBS) &&
-                  (player.price ?? 0) <= currentBudget
-                }
-                isLocked={isLocked}
-              />
-            ))}
+          <div className="space-y-6 flex-1 overflow-y-auto pr-1 min-h-0">
+            {TIER_ORDER.map(tier => {
+              const tierPlayers = playersByTier[tier];
+              if (!tierPlayers.length) return null;
+              const meta = TIER_META[tier];
+              const count = tierCounts[tier];
+              const limit = TIER_LIMITS[tier];
+              const limitReached = count >= limit;
+              return (
+                <div key={tier}>
+                  {/* Tier header */}
+                  <div className={`flex items-center justify-between px-3 py-2 rounded-lg border mb-2 ${meta.bg}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`font-bold text-sm ${meta.color}`}>{meta.label}</span>
+                      <span className="text-xs text-white/40">{meta.range}</span>
+                      <span className="text-xs text-white/30">· {meta.limit}</span>
+                    </div>
+                    <span className={`text-xs font-mono font-semibold ${limitReached && limit !== Infinity ? 'text-masters-gold' : 'text-white/40'}`}>
+                      {count}/{limit === Infinity ? '∞' : limit} picked
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {tierPlayers.map(player => (
+                      <PlayerCard key={player.id} player={player} rosterEntry={rosterMap[player.id]}
+                        onAdd={(p) => {
+                          if (starters.length >= MAX_STARTERS && subs.length >= MAX_SUBS) { alert('Roster is full'); return; }
+                          if (starters.length >= MAX_STARTERS) { handleSlotChoice(p, 'sub'); return; }
+                          handleAdd(p, 'starter');
+                        }}
+                        onRemove={handleRemove}
+                        tierLimitReached={!rosterMap[player.id] && limitReached}
+                        isLocked={isLocked}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

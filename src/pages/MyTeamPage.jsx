@@ -7,7 +7,18 @@ import {
   getUserMembership, joinTournament, getRoundSnapshots, getTournament,
   getTournamentCutStatus,
 } from '../lib/supabase';
-import { ArrowLeftRight, ChevronDown, ChevronRight, Lock, Star, LogIn, ChevronUp, AlertTriangle } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, ChevronRight, Lock, Star, LogIn, ChevronUp, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { getTier, TIER_META } from '../lib/tiers';
+
+function TierBadge({ worldRanking }) {
+  const tier = getTier(worldRanking);
+  const meta = TIER_META[tier];
+  return (
+    <span className={`text-xs font-bold px-1.5 py-0.5 rounded border ${meta.bg} ${meta.color}`}>
+      {tier}
+    </span>
+  );
+}
 
 function vsParClass(vp) {
   if (vp < 0) return 'score-under';
@@ -68,7 +79,7 @@ function HoleByHoleRow({ scores, pars, round }) {
   );
 }
 
-function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubClick, isLocked, isSub, madeCut }) {
+function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubClick, isLocked, isSub, madeCut, swapBlocked }) {
   const [expanded, setExpanded] = useState(false);
   const player = rosterEntry.players;
   const roundScores = (scores || []).filter(s => s.round === currentRound);
@@ -98,6 +109,7 @@ function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubCl
               <span className={`font-display font-semibold text-sm ${missedCut ? 'text-red-300/80 line-through' : 'text-masters-cream'}`}>
                 {player?.name}
               </span>
+              <TierBadge worldRanking={player?.world_ranking} />
               {player?.is_withdrawn && <span className="badge-wd">WD</span>}
               {missedCut && <span className="badge-cut">MISSED CUT</span>}
               {isSub && !missedCut && <span className="badge-sub">Sub</span>}
@@ -118,11 +130,13 @@ function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubCl
             </div>
           )}
           {!isLocked && !isSub && (
-            <button onClick={() => onSubClick(rosterEntry)}
+            <button onClick={() => !swapBlocked && onSubClick(rosterEntry)}
+              disabled={swapBlocked}
+              title={swapBlocked ? 'Must keep at least 1 C-tier starter for R1 & R2' : undefined}
               className={`p-1.5 rounded-lg transition-colors ${
-                needsSub
-                  ? 'text-red-400 bg-red-900/30 hover:bg-red-900/50'
-                  : 'text-white/30 hover:text-masters-gold hover:bg-masters-gold/10'
+                swapBlocked ? 'text-white/15 cursor-not-allowed'
+                : needsSub ? 'text-red-400 bg-red-900/30 hover:bg-red-900/50'
+                : 'text-white/30 hover:text-masters-gold hover:bg-masters-gold/10'
               }`}>
               <ArrowLeftRight size={14} />
             </button>
@@ -229,6 +243,12 @@ export default function MyTeamPage() {
       .sort((a, b) => a.roundTotal - b.roundTotal)
       .slice(0, 4).map(s => s.player_id)
   );
+
+  // C-tier enforcement: required for R1 and R2 (until round 2 is locked)
+  const needsCTier = !lockedRounds.some(r => r >= 2);
+  const cTierStarters = starters.filter(r => getTier(r.players?.world_ranking) === 'C');
+  const cTierSubs = subsRoster.filter(r => getTier(r.players?.world_ranking) === 'C');
+  const cTierWarning = needsCTier && cTierStarters.length === 0 && starters.length > 0;
 
   // Compute best-4-of-5 for any set of player IDs in a given round
   function computeRoundBest4(playerIds, round) {
@@ -394,6 +414,18 @@ export default function MyTeamPage() {
         );
       })()}
 
+      {cTierWarning && (
+        <div className="mb-5 px-4 py-3 rounded-xl bg-amber-900/20 border border-amber-700/40 flex items-start gap-3 text-amber-300 text-sm">
+          <ShieldAlert size={15} className="shrink-0 mt-0.5" />
+          <div>
+            <div className="font-semibold">No C-tier starter</div>
+            <div className="text-amber-300/60 text-xs mt-0.5">
+              You must have at least one C-tier player (World Ranking 41+) in your starting lineup for R1 and R2. Swap a starter for a C-tier player.
+            </div>
+          </div>
+        </div>
+      )}
+
       {roundBreakdown.length > 0 && (
         <div className="mb-6 animate-fade-up-delay-1">
           <h2 className="font-display font-semibold text-masters-cream mb-3">Round Scores</h2>
@@ -441,12 +473,19 @@ export default function MyTeamPage() {
           Starters <span className="text-xs font-body text-white/40">(best 4 count)</span>
         </h2>
         <div className="space-y-2">
-          {starters.map(r => (
-            <PlayerRow key={r.id} rosterEntry={r} isTopFour={topFourIds.has(r.player_id)}
-              scores={scores[r.player_id]} pars={pars} currentRound={currentRound}
-              onSubClick={openSubModal} isLocked={isLocked} isSub={false}
-              madeCut={cutStatus[r.player_id] ?? null} />
-          ))}
+          {starters.map(r => {
+            const isOnlyCTierStarter = needsCTier
+              && getTier(r.players?.world_ranking) === 'C'
+              && cTierStarters.length === 1
+              && cTierSubs.length === 0;
+            return (
+              <PlayerRow key={r.id} rosterEntry={r} isTopFour={topFourIds.has(r.player_id)}
+                scores={scores[r.player_id]} pars={pars} currentRound={currentRound}
+                onSubClick={openSubModal} isLocked={isLocked} isSub={false}
+                madeCut={cutStatus[r.player_id] ?? null}
+                swapBlocked={isOnlyCTierStarter} />
+            );
+          })}
           {starters.length === 0 && (
             <div className="card-dark text-center text-white/30 text-sm py-8">
               No starters selected. Go to Draft to pick your team.

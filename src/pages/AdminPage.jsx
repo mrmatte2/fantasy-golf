@@ -1033,9 +1033,19 @@ function FieldPricingTab() {
                   <div className="flex items-center gap-3 flex-wrap">
                     <div className="flex-1 min-w-0">
                       <span className="font-medium text-masters-cream text-sm truncate block">{player.name}</span>
-                      <span className="text-xs text-white/30">#{entry.world_ranking || player.world_ranking} · {player.country}</span>
+                      <span className="text-xs text-white/30">{player.country}</span>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                      {(() => {
+                        const wr = parseInt(entry.world_ranking) || null;
+                        const tier = !wr || wr > 40 ? 'C' : wr <= 3 ? 'S' : wr <= 15 ? 'A' : 'B';
+                        const tierColor = { S: 'text-yellow-400', A: 'text-masters-gold', B: 'text-blue-400', C: 'text-white/40' }[tier];
+                        return <span className={`text-xs font-bold w-5 text-center ${tierColor}`}>{tier}</span>;
+                      })()}
+                      <input type="number" min="1" value={entry.world_ranking ?? ''}
+                        onChange={e => updateField(player.id, 'world_ranking', e.target.value)}
+                        className="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-masters-cream text-center focus:outline-none focus:border-masters-gold/40"
+                        placeholder="WR" />
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-white/30">£</span>
                         <input type="number" step="0.5" min="1" value={entry.price ?? ''}
