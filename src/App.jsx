@@ -1,14 +1,27 @@
-import React from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { supabase } from './lib/supabase';
 import Navbar from './components/shared/Navbar';
 import LoginPage from './pages/LoginPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import TournamentsPage from './pages/TournamentsPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import DraftPage from './pages/DraftPage';
 import MyTeamPage from './pages/MyTeamPage';
 import AdminPage from './pages/AdminPage';
 import RulesPage from './pages/RulesPage';
+
+function AuthEventHandler() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') navigate('/reset-password');
+    });
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+  return null;
+}
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { user, profile, loading } = useAuth();
@@ -38,9 +51,11 @@ export default function App() {
   return (
     <AuthProvider>
       <HashRouter>
+        <AuthEventHandler />
         <Routes>
           {/* Public */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Tournament lobby */}
           <Route path="/tournaments" element={

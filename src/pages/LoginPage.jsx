@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signIn, signUp } from '../lib/supabase';
+import { signIn, signUp, resetPasswordForEmail } from '../lib/supabase';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState('login');
+  const [mode, setMode] = useState('login'); // 'login' | 'register' | 'forgot'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resetSent, setResetSent] = useState(false);
   const [form, setForm] = useState({ email: '', password: '', username: '' });
 
   function handle(e) {
@@ -19,15 +20,20 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      if (mode === 'login') {
+      if (mode === 'forgot') {
+        const { error } = await resetPasswordForEmail(form.email);
+        if (error) throw error;
+        setResetSent(true);
+      } else if (mode === 'login') {
         const { error } = await signIn(form.email, form.password);
         if (error) throw error;
+        navigate('/tournaments');
       } else {
         if (!form.username.trim()) throw new Error('Username is required');
         const { error } = await signUp(form.email, form.password, form.username.trim());
         if (error) throw error;
+        navigate('/tournaments');
       }
-      navigate('/tournaments');
     } catch (err) {
       setError(err.message || 'Something went wrong');
     } finally {
@@ -54,48 +60,83 @@ export default function LoginPage() {
         </div>
 
         <div className="card-dark">
-          <div className="flex gap-1 mb-6 p-1 rounded-lg bg-black/30">
-            {['login', 'register'].map(m => (
-              <button key={m} onClick={() => { setMode(m); setError(''); }}
-                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors capitalize ${
-                  mode === m
-                    ? 'bg-masters-gold/20 text-masters-gold border border-masters-gold/30'
-                    : 'text-white/40 hover:text-white/70'
-                }`}>
-                {m}
-              </button>
-            ))}
-          </div>
+          {mode !== 'forgot' && (
+            <div className="flex gap-1 mb-6 p-1 rounded-lg bg-black/30">
+              {['login', 'register'].map(m => (
+                <button key={m} onClick={() => { setMode(m); setError(''); setResetSent(false); }}
+                  className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors capitalize ${
+                    mode === m
+                      ? 'bg-masters-gold/20 text-masters-gold border border-masters-gold/30'
+                      : 'text-white/40 hover:text-white/70'
+                  }`}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          )}
 
-          <form onSubmit={submit} className="space-y-4">
-            {mode === 'register' && (
+          {mode === 'forgot' ? (
+            resetSent ? (
+              <div className="space-y-4">
+                <div className="px-4 py-3 rounded-lg bg-green-900/30 border border-green-800/40 text-green-300 text-sm text-center">
+                  Reset link sent! Check your email.
+                </div>
+                <button onClick={() => { setMode('login'); setResetSent(false); setError(''); }}
+                  className="btn-secondary w-full">Back to Sign In</button>
+              </div>
+            ) : (
+              <form onSubmit={submit} className="space-y-4">
+                <div>
+                  <p className="text-white/50 text-sm mb-4">Enter your email and we'll send you a link to reset your password.</p>
+                  <label className="label">Email</label>
+                  <input name="email" type="email" value={form.email} onChange={handle}
+                    className="input" placeholder="you@example.com" required autoFocus />
+                </div>
+                {error && (
+                  <div className="px-4 py-3 rounded-lg bg-red-900/30 border border-red-800/40 text-red-300 text-sm">{error}</div>
+                )}
+                <button type="submit" disabled={loading} className="btn-primary w-full">
+                  {loading ? 'Sending…' : 'Send Reset Link'}
+                </button>
+                <button type="button" onClick={() => { setMode('login'); setError(''); }}
+                  className="btn-secondary w-full">Back to Sign In</button>
+              </form>
+            )
+          ) : (
+            <form onSubmit={submit} className="space-y-4">
+              {mode === 'register' && (
+                <div>
+                  <label className="label">Username</label>
+                  <input name="username" value={form.username} onChange={handle}
+                    className="input" placeholder="e.g. tiger_fan" required />
+                </div>
+              )}
               <div>
-                <label className="label">Username</label>
-                <input name="username" value={form.username} onChange={handle}
-                  className="input" placeholder="e.g. tiger_fan" required />
+                <label className="label">Email</label>
+                <input name="email" type="email" value={form.email} onChange={handle}
+                  className="input" placeholder="you@example.com" required />
               </div>
-            )}
-            <div>
-              <label className="label">Email</label>
-              <input name="email" type="email" value={form.email} onChange={handle}
-                className="input" placeholder="you@example.com" required />
-            </div>
-            <div>
-              <label className="label">Password</label>
-              <input name="password" type="password" value={form.password} onChange={handle}
-                className="input" placeholder={mode === 'register' ? 'Min. 6 characters' : '••••••••'} required />
-            </div>
-
-            {error && (
-              <div className="px-4 py-3 rounded-lg bg-red-900/30 border border-red-800/40 text-red-300 text-sm">
-                {error}
+              <div>
+                <label className="label">Password</label>
+                <input name="password" type="password" value={form.password} onChange={handle}
+                  className="input" placeholder={mode === 'register' ? 'Min. 6 characters' : '••••••••'} required />
               </div>
-            )}
-
-            <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
-              {loading ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
-            </button>
-          </form>
+              {error && (
+                <div className="px-4 py-3 rounded-lg bg-red-900/30 border border-red-800/40 text-red-300 text-sm">
+                  {error}
+                </div>
+              )}
+              <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
+                {loading ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
+              </button>
+              {mode === 'login' && (
+                <button type="button" onClick={() => { setMode('forgot'); setError(''); }}
+                  className="w-full text-center text-xs text-white/30 hover:text-white/60 transition-colors pt-1">
+                  Forgot password?
+                </button>
+              )}
+            </form>
+          )}
         </div>
 
         <p className="text-center text-white/30 text-xs mt-6">

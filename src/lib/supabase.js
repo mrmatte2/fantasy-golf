@@ -27,6 +27,16 @@ export async function signOut() {
   return await supabase.auth.signOut();
 }
 
+export async function resetPasswordForEmail(email) {
+  return await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname,
+  });
+}
+
+export async function updatePassword(newPassword) {
+  return await supabase.auth.updateUser({ password: newPassword });
+}
+
 // ─── Profiles ─────────────────────────────────────────────────────────────────
 
 export async function getProfile(userId) {
