@@ -94,6 +94,14 @@ export default function DraftPage() {
     tierCounts[getTier(r.players?.world_ranking)]++;
   }
 
+  // Carry-over: unused picks from higher tiers cascade down
+  const sUnused = Math.max(0, 1 - tierCounts.S);
+  const aLimit  = 2 + sUnused;
+  const aUnused = Math.max(0, aLimit - tierCounts.A);
+  const bLimit  = 2 + aUnused;
+  const effectiveLimits = { S: 1, A: aLimit, B: bLimit, C: Infinity };
+  const carryOver = { S: 0, A: sUnused, B: aUnused, C: 0 };
+
   const loadData = useCallback(async () => {
     setLoading(true);
     const [{ data: pls }, { data: rst }, { data: mem }, cutStatus] = await Promise.all([
@@ -240,7 +248,8 @@ export default function DraftPage() {
               {TIER_ORDER.map(tier => {
                 const meta = TIER_META[tier];
                 const count = tierCounts[tier];
-                const limit = TIER_LIMITS[tier];
+                const limit = effectiveLimits[tier];
+                const carry = carryOver[tier];
                 const limitLabel = limit === Infinity ? '∞' : limit;
                 const full = count >= limit;
                 return (
@@ -248,6 +257,9 @@ export default function DraftPage() {
                     <div className="flex items-center gap-2">
                       <span className={`text-xs font-bold w-5 ${meta.color}`}>{tier}</span>
                       <span className="text-xs text-white/40">{meta.range}</span>
+                      {carry > 0 && (
+                        <span className="text-xs text-masters-gold/60">+{carry} carried</span>
+                      )}
                     </div>
                     <span className={`text-xs font-mono font-medium ${full && limit !== Infinity ? 'text-masters-gold' : 'text-white/40'}`}>
                       {count}/{limitLabel}
@@ -352,7 +364,8 @@ export default function DraftPage() {
               if (!tierPlayers.length) return null;
               const meta = TIER_META[tier];
               const count = tierCounts[tier];
-              const limit = TIER_LIMITS[tier];
+              const limit = effectiveLimits[tier];
+              const carry = carryOver[tier];
               const limitReached = count >= limit;
               return (
                 <div key={tier}>
@@ -361,7 +374,10 @@ export default function DraftPage() {
                     <div className="flex items-center gap-3">
                       <span className={`font-bold text-sm ${meta.color}`}>{meta.label}</span>
                       <span className="text-xs text-white/40">{meta.range}</span>
-                      <span className="text-xs text-white/30">· {meta.limit}</span>
+                      <span className="text-xs text-white/30">
+                        · Pick up to {limit === Infinity ? '∞' : limit}
+                        {carry > 0 && <span className="text-masters-gold/70"> (+{carry} from above)</span>}
+                      </span>
                     </div>
                     <span className={`text-xs font-mono font-semibold ${limitReached && limit !== Infinity ? 'text-masters-gold' : 'text-white/40'}`}>
                       {count}/{limit === Infinity ? '∞' : limit} picked
@@ -376,7 +392,7 @@ export default function DraftPage() {
                           handleAdd(p, 'starter');
                         }}
                         onRemove={handleRemove}
-                        tierLimitReached={!rosterMap[player.id] && limitReached}
+                        tierLimitReached={!rosterMap[player.id] && tierCounts[getTier(player.world_ranking)] >= effectiveLimits[getTier(player.world_ranking)]}
                         isLocked={isLocked}
                       />
                     ))}
