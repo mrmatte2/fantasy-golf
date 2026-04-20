@@ -28,11 +28,9 @@ export async function signOut() {
 }
 
 export async function resetPasswordForEmail(email) {
-  const isProd = window.location.hostname !== 'localhost';
-  const redirectTo = isProd
-    ? 'https://mrmatte2.github.io/fantasy-golf'
-    : window.location.origin;
-  return await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  return await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://mrmatte2.github.io/fantasy-golf',
+  });
 }
 
 export async function updatePassword(newPassword) {

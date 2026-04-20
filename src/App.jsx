@@ -18,6 +18,11 @@ function AuthEventHandler() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') navigate('/reset-password');
     });
+    // Supabase processes the token before React mounts, so the event may already
+    // have fired — check the hash directly as a fallback.
+    if (window.location.hash.includes('type=recovery')) {
+      navigate('/reset-password');
+    }
     return () => subscription.unsubscribe();
   }, [navigate]);
   return null;
