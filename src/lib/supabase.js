@@ -201,10 +201,9 @@ export async function setMemberDnf(tournamentId, userId, isDnf) {
     .eq('user_id', userId);
 }
 
-// ─── Tournament Players (per-fantasy-tournament pricing) ─────────────────────
+// ─── Tournament Players (field for a fantasy tournament) ─────────────────────
 
 export async function getTournamentPlayers(tournamentId) {
-  // Look up the linked PGA tournament for field membership
   const { data: ft } = await supabase
     .from('tournaments')
     .select('pga_tournament_id')
@@ -214,38 +213,22 @@ export async function getTournamentPlayers(tournamentId) {
   const pgaTournamentId = ft?.pga_tournament_id;
 
   if (pgaTournamentId) {
-    // New architecture: field from pga_tournament_players, pricing from tournament_players
-    const [{ data: fieldData }, { data: pricingData }] = await Promise.all([
-      supabase
-        .from('pga_tournament_players')
-        .select('player_id, players(*)')
-        .eq('pga_tournament_id', pgaTournamentId)
-        .eq('is_in_field', true),
-      supabase
-        .from('tournament_players')
-        .select('player_id, price, odds_fractional, world_ranking')
-        .eq('tournament_id', tournamentId),
-    ]);
-    const priceMap = Object.fromEntries((pricingData || []).map(tp => [tp.player_id, tp]));
-    const data = (fieldData || []).map(fp => ({
-      ...fp.players,
-      price: priceMap[fp.player_id]?.price ?? null,
-      odds_fractional: priceMap[fp.player_id]?.odds_fractional ?? fp.players?.odds_fractional,
-      world_ranking: priceMap[fp.player_id]?.world_ranking ?? fp.players?.world_ranking,
-    }));
-    return { data, error: null };
+    const { data, error } = await supabase
+      .from('pga_tournament_players')
+      .select('players(*)')
+      .eq('pga_tournament_id', pgaTournamentId)
+      .eq('is_in_field', true);
+    return { data: (data || []).map(fp => fp.players).filter(Boolean), error };
   }
 
-  // Fallback: old single-table approach (during migration, before PGA tournament is linked)
+  // Fallback for standalone tournaments (no linked PGA event)
   const { data, error } = await supabase
     .from('tournament_players')
-    .select('price, odds_fractional, world_ranking, players(*)')
+    .select('world_ranking, players(*)')
     .eq('tournament_id', tournamentId)
     .order('world_ranking');
   const flattened = (data || []).map(tp => ({
     ...tp.players,
-    price: tp.price ?? tp.players?.price,
-    odds_fractional: tp.odds_fractional ?? tp.players?.odds_fractional,
     world_ranking: tp.world_ranking ?? tp.players?.world_ranking,
   }));
   return { data: flattened, error };
@@ -259,22 +242,6 @@ export async function getTournamentField(tournamentId) {
     .order('world_ranking');
 }
 
-export async function upsertTournamentPlayers(tournamentId, entries) {
-  // entries: [{ player_id, price, odds_fractional, world_ranking }]
-  const rows = entries.map(e => ({ ...e, tournament_id: tournamentId }));
-  return await supabase
-    .from('tournament_players')
-    .upsert(rows, { onConflict: 'tournament_id,player_id' })
-    .select();
-}
-
-export async function getTournamentPriceMap(tournamentId) {
-  const { data } = await supabase
-    .from('tournament_players')
-    .select('player_id, price')
-    .eq('tournament_id', tournamentId);
-  return Object.fromEntries((data || []).map(tp => [tp.player_id, tp.price ?? 0]));
-}
 
 // ─── Players (global master list) ─────────────────────────────────────────────
 
@@ -431,12 +398,3 @@ export async function getLockedRounds(tournamentId) {
   return [...new Set((data || []).map(r => r.round))].sort();
 }
 
-// ─── Pricing formula ──────────────────────────────────────────────────────────
-
-export function calculatePrice(worldRanking, oddsDecimal, formScore) {
-  const rankingScore = Math.max(1, 10 - (worldRanking - 1) * (9 / 199));
-  const oddsScore = Math.max(1, 10 - Math.log(oddsDecimal) * 2);
-  const fs = formScore || 5;
-  const raw = rankingScore * 0.4 + oddsScore * 0.4 + fs * 0.2;
-  return Math.round(raw * 1.8 * 10) / 10;
-}

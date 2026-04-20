@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trophy, Users, BarChart3, ArrowLeftRight, Scissors, AlertTriangle, DollarSign, ChevronDown, ChevronUp } from 'lucide-react';
+import { Trophy, Users, BarChart3, ArrowLeftRight, Scissors, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 
 function Section({ icon: Icon, title, children }) {
   const [open, setOpen] = useState(true);
@@ -71,16 +71,25 @@ export default function RulesPage() {
       </Section>
 
       {/* Draft */}
-      <Section icon={DollarSign} title="The Draft">
-        <Rule label="Budget">
-          Every team gets a fixed budget (e.g. £100) to spend on 8 players. Prices are set before
-          the tournament based on each player's world ranking, betting odds, and recent form — elite
-          players cost significantly more.
+      <Section icon={Users} title="The Draft">
+        <Rule label="Tier system">
+          Players are divided into tiers based on world ranking. You can only pick a limited number
+          from the elite tiers, forcing strategic trade-offs across your squad.
+        </Rule>
+        <Rule label="Tier limits">
+          <span className="text-yellow-400 font-bold">S Tier</span> (Rank 1–3): pick 1 ·{' '}
+          <span className="text-masters-gold font-bold">A Tier</span> (Rank 4–15): pick up to 2 ·{' '}
+          <span className="text-blue-400 font-bold">B Tier</span> (Rank 16–40): pick up to 2 ·{' '}
+          <span className="text-white/60 font-bold">C Tier</span> (Rank 41+): unlimited
         </Rule>
         <Rule label="Roster size">
           Pick exactly <span className="text-masters-cream font-medium">5 Starters</span> and{' '}
-          <span className="text-masters-cream font-medium">3 Substitutes</span>. You must fill all
-          8 slots before play begins.
+          <span className="text-masters-cream font-medium">3 Substitutes</span>. Tier limits apply
+          across all 8 picks combined.
+        </Rule>
+        <Rule label="C-tier requirement">
+          For Round 1 and Round 2 your starting lineup must include at least one C-tier player.
+          This requirement is lifted from Round 3 onwards.
         </Rule>
         <Rule label="Substitution order">
           Your subs are ranked <Pill>S1</Pill> <Pill>S2</Pill> <Pill>S3</Pill>. The order matters —

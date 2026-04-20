@@ -56,7 +56,6 @@ function TournamentCard({ t, membership, onJoin, onEnter }) {
           </div>
           <div className="text-xs text-white/40 flex items-center gap-3 flex-wrap">
             {t.pga_tournaments?.name && <span>{t.pga_tournaments.name}</span>}
-            <span>Budget: £{Number(t.budget).toFixed(0)}</span>
             {!past && (
               <span className="flex items-center gap-1">
                 {t.is_locked ? <Lock size={10} /> : <Unlock size={10} />}

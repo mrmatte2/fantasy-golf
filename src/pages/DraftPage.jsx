@@ -45,7 +45,6 @@ function PlayerCard({ player, rosterEntry, onAdd, onRemove, tierLimitReached, is
           <div className="flex items-center gap-3 text-xs text-white/40 mt-0.5">
             <span>#{player.world_ranking} WR</span>
             <span>{player.country}</span>
-            <span>{player.odds_fractional}</span>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -75,7 +74,6 @@ export default function DraftPage() {
   const [membership, setMembership] = useState(undefined);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('ranking');
   const [hideCut, setHideCut] = useState(true);
   const [slotModal, setSlotModal] = useState(null);
 
@@ -205,10 +203,7 @@ export default function DraftPage() {
       const q = search.toLowerCase();
       return p.name.toLowerCase().includes(q) || (p.country || '').toLowerCase().includes(q);
     })
-    .sort((a, b) => {
-      if (sortBy === 'odds') return (a.odds_decimal ?? 999) - (b.odds_decimal ?? 999);
-      return (a.world_ranking ?? 999) - (b.world_ranking ?? 999);
-    });
+    .sort((a, b) => (a.world_ranking ?? 999) - (b.world_ranking ?? 999));
 
   // Group filtered players by tier
   const playersByTier = {};
@@ -339,11 +334,6 @@ export default function DraftPage() {
               <input value={search} onChange={e => setSearch(e.target.value)}
                 className="input pl-9 h-10" placeholder="Search players…" />
             </div>
-            <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-              className="input w-auto h-10 pr-8 appearance-none cursor-pointer">
-              <option value="ranking">Sort: World Ranking</option>
-              <option value="odds">Sort: Odds</option>
-            </select>
             {cutCount > 0 && (
               <button onClick={() => setHideCut(!hideCut)}
                 className={`h-10 px-3 rounded-lg border text-xs font-medium transition-colors ${

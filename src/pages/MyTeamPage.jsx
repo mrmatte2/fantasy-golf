@@ -116,7 +116,7 @@ function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubCl
               {isSub && missedCut && <span className="text-xs text-red-400/60">Sub · Cut</span>}
               {!isSub && !missedCut && isTopFour && <span className="text-xs text-masters-gold/60">Counting</span>}
             </div>
-            <div className="text-xs text-white/40 mt-0.5">#{player?.world_ranking} WR · {player?.odds_fractional}</div>
+            <div className="text-xs text-white/40 mt-0.5">#{player?.world_ranking} WR</div>
             {needsSub && (
               <div className="text-xs text-red-400 mt-1 font-medium">⚠ Substitute needed for Round {currentRound + 1}</div>
             )}
@@ -589,7 +589,7 @@ export default function MyTeamPage() {
                         )}
                       </div>
                       <div className="text-xs text-white/40 mt-0.5 flex items-center gap-2 flex-wrap">
-                        <span>#{sub.players?.world_ranking} WR · £{sub.players?.price_override ?? sub.players?.price}</span>
+                        <span>#{sub.players?.world_ranking} WR</span>
                         {survived
                           ? <span className="text-green-400">✓ Made cut</span>
                           : <span className="text-red-400">✗ Missed cut</span>
