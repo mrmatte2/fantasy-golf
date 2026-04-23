@@ -578,8 +578,8 @@ async function main() {
   // Load all PGA tournaments that have sync enabled
   const { data: tournaments, error: tourErr } = await supabase
     .from('pga_tournaments')
-    .select('id, name, sync_url, sync_format, sync_start_date, sync_end_date, sync_enabled')
-    .eq('sync_enabled', true);
+    .select('id, name, sync_url, sync_format, sync_start_date, sync_end_date')
+    .not('sync_url', 'is', null);
 
   if (tourErr) {
     console.error('Failed to load pga_tournaments:', tourErr.message);

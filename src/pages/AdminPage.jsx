@@ -29,20 +29,16 @@ function formatDateRange(start, end) {
 
 function eventStatus(event) {
   const today = new Date().toISOString().slice(0, 10);
-  if (!event.sync_enabled) {
-    if (event.sync_start_date && today < event.sync_start_date)
-      return { label: 'Upcoming', cls: 'bg-blue-900/30 text-blue-300 border-blue-800/40' };
-    if (event.sync_end_date && today > event.sync_end_date)
-      return { label: 'Past', cls: 'bg-white/5 text-white/30 border-white/10' };
-    return { label: 'Sync off', cls: 'bg-white/5 text-white/30 border-white/10' };
-  }
+  if (!event.sync_url) return { label: 'No URL', cls: 'bg-white/5 text-white/30 border-white/10' };
   if (event.sync_start_date && today < event.sync_start_date) {
     const days = Math.ceil((new Date(event.sync_start_date) - new Date()) / 86400000);
     return { label: `In ${days}d`, cls: 'bg-yellow-900/30 text-yellow-300 border-yellow-800/40' };
   }
   if (event.sync_end_date && today > event.sync_end_date)
     return { label: 'Ended', cls: 'bg-white/5 text-white/40 border-white/10' };
-  return { label: 'Live', cls: 'bg-green-900/30 text-green-300 border-green-800/40' };
+  if (event.sync_start_date || event.sync_end_date)
+    return { label: 'Live', cls: 'bg-green-900/30 text-green-300 border-green-800/40' };
+  return { label: 'Upcoming', cls: 'bg-blue-900/30 text-blue-300 border-blue-800/40' };
 }
 
 function isPast(event) {
@@ -83,7 +79,6 @@ function PgaEventsTab() {
       sync_format: event.sync_format || 'espn',
       sync_start_date: event.sync_start_date || '',
       sync_end_date: event.sync_end_date || '',
-      sync_enabled: event.sync_enabled || false,
     });
     getPgaHolePars(selectedId).then(({ data }) => {
       const map = {};
@@ -152,7 +147,6 @@ function PgaEventsTab() {
       sync_format: syncForm.sync_format,
       sync_start_date: syncForm.sync_start_date || null,
       sync_end_date: syncForm.sync_end_date || null,
-      sync_enabled: syncForm.sync_enabled,
     });
     await loadEvents();
     setSaving('');
@@ -198,7 +192,7 @@ function PgaEventsTab() {
   }
 
   function getSyncStatus() {
-    if (!syncForm.sync_enabled) return { label: 'Disabled', cls: 'bg-white/5 text-white/30 border-white/10' };
+    if (!syncForm.sync_url) return { label: 'No URL set', cls: 'bg-white/5 text-white/30 border-white/10' };
     const today = new Date().toISOString().slice(0, 10);
     if (syncForm.sync_start_date && today < syncForm.sync_start_date) {
       const days = Math.ceil((new Date(syncForm.sync_start_date) - new Date()) / 86400000);
@@ -414,17 +408,6 @@ function PgaEventsTab() {
               </span>
             </div>
             <div className="space-y-4">
-              <div className="flex items-center gap-3 cursor-pointer"
-                onClick={() => setSyncForm(f => ({ ...f, sync_enabled: !f.sync_enabled }))}>
-                <div className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
-                  syncForm.sync_enabled ? 'bg-green-600' : 'bg-white/10'
-                }`}>
-                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                    syncForm.sync_enabled ? 'translate-x-5' : 'translate-x-0.5'
-                  }`} />
-                </div>
-                <span className="text-sm text-white/70 select-none">Enable automated score sync</span>
-              </div>
               <div>
                 <label className="label">Score API URL</label>
                 <input type="url" value={syncForm.sync_url}
@@ -923,7 +906,7 @@ function ScoresTab() {
 
   useEffect(() => {
     getPgaTournaments().then(({ data }) =>
-      setPgaTournaments((data || []).filter(t => t.sync_enabled))
+      setPgaTournaments((data || []).filter(t => t.sync_url))
     );
   }, []);
 
