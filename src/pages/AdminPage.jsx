@@ -422,8 +422,8 @@ function PgaEventsTab() {
                     onChange={e => setSyncForm(f => ({ ...f, sync_format: e.target.value }))}
                     className="input appearance-none w-full">
                     <option value="espn">ESPN (All PGA Tour events)</option>
+                    <option value="espn-team">ESPN Team (Zurich Classic etc.)</option>
                     <option value="masters">Masters (masters.com)</option>
-                    <option value="pga_tour">PGA Tour (coming soon)</option>
                   </select>
                 </div>
                 <div>
