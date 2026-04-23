@@ -215,7 +215,7 @@ async function snapshotRostersIfNewRound(pgaTournamentId) {
       if (round === 1) {
         await supabase
           .from('tournaments')
-          .update({ is_locked: true })
+          .update({ is_locked: true, draft_open: false })
           .eq('id', ft.id)
           .eq('is_locked', false); // no-op if already locked
         console.log(`  Locked fantasy tournament ${ft.id} (R1 scores received)`);

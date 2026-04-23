@@ -845,10 +845,11 @@ function TournamentsTab({ currentUserId }) {
                   className="input font-mono tracking-widest" placeholder="e.g. MASTERS26" maxLength={20} />
               </div>
               <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
-                  <input type="checkbox" checked={form.draft_open}
+                <label className={`flex items-center gap-2 text-sm cursor-pointer ${form.is_locked ? 'text-white/20 cursor-not-allowed' : 'text-white/60'}`}>
+                  <input type="checkbox" checked={form.draft_open} disabled={form.is_locked}
                     onChange={e => setForm(f => ({ ...f, draft_open: e.target.checked }))} />
                   Draft Open
+                  {form.is_locked && <span className="text-xs text-white/30">(auto-closed)</span>}
                 </label>
                 <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
                   <input type="checkbox" checked={form.is_locked}
