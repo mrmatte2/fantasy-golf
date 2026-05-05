@@ -2,7 +2,7 @@ name: Sync Scores
 
 on:
   schedule:
-    - cron: '0 4-23 * * *'   # hourly fallback during active hours (04:00–23:00 UTC = 06:00–01:00 CEST)
+    - cron: '0 4-23 * * 0,1,4,5,6'   # hourly fallback Thu–Mon, 04:00–23:00 UTC (06:00–01:00 CEST)
   workflow_dispatch:           # manual trigger from GitHub Actions UI
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install dependencies
         run: npm install @supabase/supabase-js
