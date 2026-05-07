@@ -832,7 +832,7 @@ function TournamentsTab({ currentUserId }) {
                   className="input appearance-none">
                   <option value="">None (standalone)</option>
                   {[...pgaEvents]
-                    .filter(e => !e.sync_start_date || e.sync_start_date > new Date().toISOString().slice(0, 10))
+                    .filter(e => !e.sync_start_date || e.sync_start_date >= new Date().toISOString().slice(0, 10))
                     .sort((a, b) => (a.sync_start_date || '9999').localeCompare(b.sync_start_date || '9999'))
                     .map(e => <option key={e.id} value={e.id}>{e.name}{e.sync_start_date ? ` (${e.sync_start_date})` : ''}</option>)}
                 </select>
