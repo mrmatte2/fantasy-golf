@@ -103,6 +103,10 @@ export default function DraftPage() {
   const effectiveLimits = { S: 1, A: aLimit, B: bLimit, C: Infinity };
   const carryOver = { S: 0, A: sUnused, B: aUnused, C: 0 };
 
+  // C-tier starter warning
+  const hasCtierStarter = starters.some(r => getTier(r.players?.world_ranking) === 'C');
+  const showCtierWarning = starters.length === MAX_STARTERS && !hasCtierStarter;
+
   const loadData = useCallback(async () => {
     setLoading(true);
     const [{ data: pls }, { data: rst }, { data: mem }, cutStatus] = await Promise.all([
@@ -274,6 +278,26 @@ export default function DraftPage() {
               })}
             </div>
           </div>
+
+          {/* C-tier starter warning */}
+          {showCtierWarning && (
+            <div className="px-4 py-3 rounded-xl bg-amber-900/20 border border-amber-700/40 flex items-start gap-3">
+              <Info size={16} className="shrink-0 mt-0.5 text-amber-400" />
+              <div>
+                <p className="text-xs font-semibold text-amber-300 mb-0.5">No C-tier starter</p>
+                <p className="text-xs text-amber-300/60 leading-relaxed">
+                  R1 &amp; R2 require a C-tier player in your starting lineup.{' '}
+                  <button
+                    onClick={() => navigate(`/tournaments/${tournamentId}/my-team`)}
+                    className="underline underline-offset-2 hover:text-amber-200 transition-colors text-amber-400"
+                  >
+                    Go to My Team
+                  </button>{' '}
+                  to rearrange.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Starters */}
           <div className="card-dark">
