@@ -1,0 +1,40 @@
+name: Test normName function
+
+on:
+  workflow_dispatch:  # run manually from GitHub Actions tab
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run normName tests
+        run: |
+          node - <<'EOF'
+          const normName = n => n.toLowerCase().trim().replace(/\s+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+          const testCases = [
+            { a: 'Ludvig Åberg', b: 'Ludvig Aberg' },
+            { a: 'Ludvig Åberg', b: 'ludvig aberg' },
+            { a: '  Ludvig  Åberg  ', b: 'Ludvig Aberg' },
+            { a: 'Sébastien Cazalet', b: 'Sebastien Cazalet' },
+          ];
+
+          let passed = 0;
+          let failed = 0;
+
+          for (const { a, b } of testCases) {
+            const match = normName(a) === normName(b);
+            if (match) {
+              console.log(`✓  "${a}" === "${b}"`);
+              passed++;
+            } else {
+              console.log(`✗  "${a}" !== "${b}"  (got "${normName(a)}" vs "${normName(b)}")`);
+              failed++;
+            }
+          }
+
+          console.log(`\n${passed} passed, ${failed} failed`);
+          if (failed > 0) process.exit(1);
+          EOF
