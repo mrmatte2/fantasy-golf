@@ -288,7 +288,7 @@ export default function DraftPage() {
                 <p className="text-xs text-amber-300/60 leading-relaxed">
                   R1 &amp; R2 require a C-tier player in your starting lineup.{' '}
                   <button
-                    onClick={() => navigate(`/tournaments/${tournamentId}/my-team`)}
+                    onClick={() => navigate(`/tournament/${tournamentId}/my-team`)}
                     className="underline underline-offset-2 hover:text-amber-200 transition-colors text-amber-400"
                   >
                     Go to My Team
