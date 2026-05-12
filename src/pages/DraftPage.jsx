@@ -76,6 +76,7 @@ export default function DraftPage() {
   const [search, setSearch] = useState('');
   const [hideCut, setHideCut] = useState(true);
   const [slotModal, setSlotModal] = useState(null);
+  const [collapsedTiers, setCollapsedTiers] = useState({});
 
   // Join flow state
   const [joinTeamName, setJoinTeamName] = useState('');
@@ -155,6 +156,10 @@ export default function DraftPage() {
     const { error } = await removeFromRoster(user.id, player.id, tournamentId);
     if (error) { alert(error.message); return; }
     await loadData();
+  }
+
+  function toggleTier(tier) {
+    setCollapsedTiers(prev => ({ ...prev, [tier]: !prev[tier] }));
   }
 
   if (loading || membership === undefined) {
@@ -367,36 +372,55 @@ export default function DraftPage() {
               const limit = effectiveLimits[tier];
               const carry = carryOver[tier];
               const limitReached = count >= limit;
+              const isCollapsed = !!collapsedTiers[tier];
+
               return (
                 <div key={tier}>
-                  {/* Tier header */}
-                  <div className={`flex items-center justify-between px-3 py-2 rounded-lg border mb-2 ${meta.bg}`}>
+                  {/* Tier header — clickable to collapse */}
+                  <button
+                    onClick={() => toggleTier(tier)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border mb-2 ${meta.bg} transition-opacity hover:opacity-80 cursor-pointer`}
+                  >
                     <div className="flex items-center gap-3">
                       <span className={`font-bold text-sm ${meta.color}`}>{meta.label}</span>
                       <span className="text-xs text-white/40">{meta.range}</span>
-                      <span className="text-xs text-white/30">
-                        · Pick up to {limit === Infinity ? '∞' : limit}
-                        {carry > 0 && <span className="text-masters-gold/70"> (+{carry} from above)</span>}
-                      </span>
+                      {!isCollapsed && (
+                        <span className="text-xs text-white/30">
+                          · Pick up to {limit === Infinity ? '∞' : limit}
+                          {carry > 0 && <span className="text-masters-gold/70"> (+{carry} from above)</span>}
+                        </span>
+                      )}
                     </div>
-                    <span className={`text-xs font-mono font-semibold ${limitReached && limit !== Infinity ? 'text-masters-gold' : 'text-white/40'}`}>
-                      {count}/{limit === Infinity ? '∞' : limit} picked
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {tierPlayers.map(player => (
-                      <PlayerCard key={player.id} player={player} rosterEntry={rosterMap[player.id]}
-                        onAdd={(p) => {
-                          if (starters.length >= MAX_STARTERS && subs.length >= MAX_SUBS) { alert('Roster is full'); return; }
-                          if (starters.length >= MAX_STARTERS) { handleSlotChoice(p, 'sub'); return; }
-                          handleAdd(p, 'starter');
-                        }}
-                        onRemove={handleRemove}
-                        tierLimitReached={!rosterMap[player.id] && tierCounts[getTier(player.world_ranking)] >= effectiveLimits[getTier(player.world_ranking)]}
-                        isLocked={isLocked}
-                      />
-                    ))}
-                  </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs font-mono font-semibold ${limitReached && limit !== Infinity ? 'text-masters-gold' : 'text-white/40'}`}>
+                        {count}/{limit === Infinity ? '∞' : limit} picked
+                      </span>
+                      <svg
+                        className={`w-4 h-4 text-white/40 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}
+                        viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
+                      >
+                        <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                  </button>
+
+                  {/* Collapsible player list */}
+                  {!isCollapsed && (
+                    <div className="space-y-2">
+                      {tierPlayers.map(player => (
+                        <PlayerCard key={player.id} player={player} rosterEntry={rosterMap[player.id]}
+                          onAdd={(p) => {
+                            if (starters.length >= MAX_STARTERS && subs.length >= MAX_SUBS) { alert('Roster is full'); return; }
+                            if (starters.length >= MAX_STARTERS) { handleSlotChoice(p, 'sub'); return; }
+                            handleAdd(p, 'starter');
+                          }}
+                          onRemove={handleRemove}
+                          tierLimitReached={!rosterMap[player.id] && tierCounts[getTier(player.world_ranking)] >= effectiveLimits[getTier(player.world_ranking)]}
+                          isLocked={isLocked}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
