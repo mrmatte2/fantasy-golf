@@ -76,7 +76,9 @@ async function loadPlayers() {
   return data;
 }
 
-const normName = n => n.toLowerCase().trim().replace(/\s+/g, ' ');
+// Normalizes player names for comparison: lowercases, trims, collapses spaces,
+// and strips diacritics so that e.g. "Åberg" and "Aberg" match correctly.
+const normName = n => n.toLowerCase().trim().replace(/\s+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 function findPlayer(players, name) {
   const target = normName(name);
