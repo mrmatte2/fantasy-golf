@@ -230,7 +230,7 @@ function PgaEventsTab() {
     // Everything else is treated as a player name — order-independent.
     const names = lines.filter(l => !GOLF_COUNTRIES.has(l.toLowerCase()));
 
-    const norm = n => n.toLowerCase().trim().replace(/\s+/g, ' ');
+    const norm = n => n.toLowerCase().trim().replace(/\s+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const matched = [];
     const newPlayers = [];
     for (const name of names) {
