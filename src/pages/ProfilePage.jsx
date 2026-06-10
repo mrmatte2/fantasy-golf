@@ -67,10 +67,12 @@ export default function ProfilePage() {
           </label>
           <input
             value={phone}
-            onChange={e => { setPhone(e.target.value); setSaved(false); setError(''); }}
+            onChange={e => { setPhone(e.target.value.replace(/\D/g, '')); setSaved(false); setError(''); }}
             onKeyDown={e => e.key === 'Enter' && handleSave()}
             className="input"
             placeholder="e.g. 0701234567"
+            inputMode="numeric"
+            maxLength={10}
           />
         </div>
 
