@@ -42,7 +42,10 @@ const ESPN_CORE_EVENT  = id => `https://sports.core.api.espn.com/v2/sports/golf/
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function normName(n) {
-  return (n || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  return (n || '').toLowerCase().trim()
+    .replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/å/g, 'a')
+    .replace(/\s+/g, ' ')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 async function espnFetch(url) {
