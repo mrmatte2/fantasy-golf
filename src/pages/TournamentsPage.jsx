@@ -114,7 +114,6 @@ export default function TournamentsPage() {
 
   // Join modal state
   const [joinModal, setJoinModal] = useState(null);
-  const [teamName, setTeamName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState('');
@@ -136,17 +135,15 @@ export default function TournamentsPage() {
 
   function openJoin(t) {
     setJoinModal(t);
-    setTeamName('');
     setJoinCode('');
     setJoinError('');
   }
 
   async function handleJoin() {
-    if (!teamName.trim()) { setJoinError('Team name is required.'); return; }
     setJoining(true);
     setJoinError('');
     const { error } = await joinTournament(
-      joinModal.id, user.id, teamName.trim(),
+      joinModal.id, user.id, profile.team_name,
       joinCode, joinModal.join_code
     );
     if (error) { setJoinError(error.message); setJoining(false); return; }
@@ -237,34 +234,24 @@ export default function TournamentsPage() {
           onClick={() => setJoinModal(null)}>
           <div className="card max-w-sm w-full" onClick={e => e.stopPropagation()}>
             <h3 className="font-display font-bold text-masters-cream mb-1">Join {joinModal.name}</h3>
-            <p className="text-white/40 text-sm mb-5">Choose a team name to start drafting.</p>
-            <div className="space-y-3 mb-4">
-              {joinModal.join_code && (
-                <div>
-                  <label className="label flex items-center gap-1.5">
-                    <KeyRound size={12} /> Join Code
-                  </label>
-                  <input
-                    value={joinCode}
-                    onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinError(''); }}
-                    className="input font-mono tracking-widest"
-                    placeholder="Enter code"
-                    autoFocus
-                  />
-                </div>
-              )}
-              <div>
-                <label className="label">Team Name</label>
+            <p className="text-white/40 text-sm mb-5">
+              Joining as <span className="text-masters-gold font-medium">{profile.team_name}</span>
+            </p>
+            {joinModal.join_code && (
+              <div className="mb-4">
+                <label className="label flex items-center gap-1.5">
+                  <KeyRound size={12} /> Join Code
+                </label>
                 <input
-                  value={teamName}
-                  onChange={e => { setTeamName(e.target.value); setJoinError(''); }}
-                  className="input"
-                  placeholder="e.g. Amen Corner FC"
-                  autoFocus={!joinModal.join_code}
+                  value={joinCode}
+                  onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinError(''); }}
+                  className="input font-mono tracking-widest"
+                  placeholder="Enter code"
+                  autoFocus
                   onKeyDown={e => e.key === 'Enter' && handleJoin()}
                 />
               </div>
-            </div>
+            )}
             {joinError && <p className="text-red-400 text-xs mb-3">{joinError}</p>}
             <div className="flex gap-3">
               <button onClick={handleJoin} disabled={joining} className="btn-primary flex-1">

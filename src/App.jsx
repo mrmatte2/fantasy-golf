@@ -11,6 +11,7 @@ import DraftPage from './pages/DraftPage';
 import MyTeamPage from './pages/MyTeamPage';
 import AdminPage from './pages/AdminPage';
 import RulesPage from './pages/RulesPage';
+import TeamNamePrompt from './components/shared/TeamNamePrompt';
 
 function AuthEventHandler() {
   const navigate = useNavigate();
@@ -44,10 +45,12 @@ function ProtectedRoute({ children, adminOnly = false }) {
 }
 
 function AppLayout({ children }) {
+  const { user, profile } = useAuth();
   return (
     <div className="min-h-screen">
       <Navbar />
       <main>{children}</main>
+      {user && profile && !profile.team_name && <TeamNamePrompt />}
     </div>
   );
 }

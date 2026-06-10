@@ -243,7 +243,6 @@ async function syncAll() {
           sync_url: syncUrl,
           sync_start_date: syncStart,
           sync_end_date: syncEnd,
-          sync_enabled: false, // admin enables sync manually when ready
         })
         .select('id')
         .single();
