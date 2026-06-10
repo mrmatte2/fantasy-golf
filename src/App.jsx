@@ -11,6 +11,7 @@ import DraftPage from './pages/DraftPage';
 import MyTeamPage from './pages/MyTeamPage';
 import AdminPage from './pages/AdminPage';
 import RulesPage from './pages/RulesPage';
+import ProfilePage from './pages/ProfilePage';
 import TeamNamePrompt from './components/shared/TeamNamePrompt';
 
 function AuthEventHandler() {
@@ -95,6 +96,13 @@ export default function App() {
           <Route path="/rules" element={
             <ProtectedRoute>
               <AppLayout><RulesPage /></AppLayout>
+            </ProtectedRoute>
+          } />
+
+          {/* Profile */}
+          <Route path="/profile" element={
+            <ProtectedRoute>
+              <AppLayout><ProfilePage /></AppLayout>
             </ProtectedRoute>
           } />
 

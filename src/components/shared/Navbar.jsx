@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useTournament } from '../../hooks/useTournament';
 import { signOut, getUserMembership } from '../../lib/supabase';
-import { Trophy, Users, BarChart3, Settings, LogOut, Menu, X, Lock, Unlock, ChevronLeft, BookOpen } from 'lucide-react';
+import { Trophy, Users, BarChart3, Settings, LogOut, Menu, X, Lock, Unlock, ChevronLeft, BookOpen, User } from 'lucide-react';
 
 export default function Navbar() {
   const { user, profile } = useAuth();
@@ -30,10 +30,12 @@ export default function Navbar() {
       { path: `/tournament/${tournamentId}/draft`,   label: 'Draft',   icon: Users },
       { path: `/tournament/${tournamentId}/my-team`, label: 'My Team', icon: BarChart3 },
     ] : []),
-    { path: '/rules',                                  label: 'Rules',        icon: BookOpen },
+    { path: '/rules',   label: 'Rules',      icon: BookOpen },
+    { path: '/profile', label: 'My Profile', icon: User },
     ...(profile?.is_admin ? [{ path: '/admin', label: 'Admin', icon: Settings }] : []),
   ] : [
-    { path: '/rules', label: 'Rules', icon: BookOpen },
+    { path: '/rules',   label: 'Rules',      icon: BookOpen },
+    { path: '/profile', label: 'My Profile', icon: User },
     ...(profile?.is_admin ? [{ path: '/admin', label: 'Admin', icon: Settings }] : []),
   ];
 

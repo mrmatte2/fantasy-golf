@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { getTournaments, getUserMemberships, joinTournament } from '../lib/supabase';
-import { Trophy, LogIn, ChevronRight, Lock, Unlock, Settings, KeyRound, Clock, CheckCircle2, Eye } from 'lucide-react';
+import { Trophy, LogIn, ChevronRight, Lock, Unlock, Settings, KeyRound, Clock, CheckCircle2, Eye, Banknote } from 'lucide-react';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -43,6 +43,11 @@ function TournamentCard({ t, membership, onJoin, onEnter }) {
             <span className={`text-xs px-2 py-0.5 rounded-full border ${badge.cls}`}>
               {badge.label}
             </span>
+            {t.is_money_match && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/30 text-emerald-400 border border-emerald-800/40 flex items-center gap-1">
+                <Banknote size={10} /> Money Match
+              </span>
+            )}
             {t.current_round > 0 && !past && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-masters-gold/20 text-masters-gold border border-masters-gold/30">
                 R{t.current_round}
@@ -140,6 +145,10 @@ export default function TournamentsPage() {
   }
 
   async function handleJoin() {
+    if (joinModal.is_money_match && !profile.phone_number) {
+      setJoinError('A phone number is required for money matches. Add one in My Profile.');
+      return;
+    }
     setJoining(true);
     setJoinError('');
     const { error } = await joinTournament(

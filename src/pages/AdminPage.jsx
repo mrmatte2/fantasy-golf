@@ -702,13 +702,13 @@ function TournamentsTab({ currentUserId }) {
   }
 
   function openCreate() {
-    setForm({ name: '', pga_tournament_id: '', draft_open: true, is_locked: false, join_code: '' });
+    setForm({ name: '', pga_tournament_id: '', draft_open: true, is_locked: false, join_code: '', is_money_match: false });
     setSaveError('');
     setModal('create');
   }
 
   function openEdit(t) {
-    setForm({ name: t.name, pga_tournament_id: t.pga_tournament_id || '', draft_open: t.draft_open, is_locked: t.is_locked, join_code: t.join_code || '' });
+    setForm({ name: t.name, pga_tournament_id: t.pga_tournament_id || '', draft_open: t.draft_open, is_locked: t.is_locked, join_code: t.join_code || '', is_money_match: t.is_money_match || false });
     setSaveError('');
     setModal(t);
   }
@@ -723,6 +723,7 @@ function TournamentsTab({ currentUserId }) {
       draft_open: form.draft_open,
       is_locked: form.is_locked,
       join_code: form.join_code.trim().toUpperCase() || null,
+      is_money_match: form.is_money_match,
     };
     const { error } = modal === 'create'
       ? await createTournament({ ...payload, created_by: currentUserId })
@@ -766,6 +767,9 @@ function TournamentsTab({ currentUserId }) {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="font-display font-semibold text-masters-cream">{t.name}</span>
+                    {t.is_money_match && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/30 text-emerald-400 border border-emerald-800/40">Money Match</span>
+                    )}
                   </div>
                   <div className="text-xs text-white/40 flex items-center gap-3 flex-wrap">
                     {t.pga_tournaments?.name && <span>{t.pga_tournaments.name}</span>}
@@ -843,7 +847,7 @@ function TournamentsTab({ currentUserId }) {
                   onChange={e => setForm(f => ({ ...f, join_code: e.target.value.toUpperCase() }))}
                   className="input font-mono tracking-widest" placeholder="e.g. MASTERS26" maxLength={20} />
               </div>
-              <div className="flex gap-4">
+              <div className="flex gap-4 flex-wrap">
                 <label className={`flex items-center gap-2 text-sm cursor-pointer ${form.is_locked ? 'text-white/20 cursor-not-allowed' : 'text-white/60'}`}>
                   <input type="checkbox" checked={form.draft_open} disabled={form.is_locked}
                     onChange={e => setForm(f => ({ ...f, draft_open: e.target.checked }))} />
@@ -854,6 +858,11 @@ function TournamentsTab({ currentUserId }) {
                   <input type="checkbox" checked={form.is_locked}
                     onChange={e => setForm(f => ({ ...f, is_locked: e.target.checked }))} />
                   Roster Locked
+                </label>
+                <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
+                  <input type="checkbox" checked={form.is_money_match}
+                    onChange={e => setForm(f => ({ ...f, is_money_match: e.target.checked }))} />
+                  Money Match
                 </label>
               </div>
             </div>
@@ -1302,18 +1311,25 @@ function UsersTab() {
   return (
     <div className="space-y-3">
       {profiles.map(p => (
-        <div key={p.id} className="card-dark flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
+        <div key={p.id} className="card-dark flex items-center justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-masters-cream">{p.username}</span>
               {p.is_admin && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-masters-gold/20 text-masters-gold border border-masters-gold/30">Admin</span>
               )}
             </div>
-            <div className="text-xs text-white/30 mt-0.5">{p.id}</div>
+            <div className="flex gap-4 mt-1 flex-wrap">
+              <span className="text-xs text-white/40">
+                Team: <span className="text-white/60">{p.team_name || <span className="italic text-white/25">not set</span>}</span>
+              </span>
+              <span className="text-xs text-white/40">
+                Phone: <span className="text-white/60">{p.phone_number || <span className="italic text-white/25">not set</span>}</span>
+              </span>
+            </div>
           </div>
           <button onClick={() => toggleAdmin(p)}
-            className={p.is_admin ? 'btn-danger text-xs' : 'btn-secondary text-xs'}>
+            className={`shrink-0 ${p.is_admin ? 'btn-danger text-xs' : 'btn-secondary text-xs'}`}>
             {p.is_admin ? 'Remove Admin' : 'Make Admin'}
           </button>
         </div>
