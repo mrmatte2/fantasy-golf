@@ -1,7 +1,9 @@
 name: Sync OWGR Rankings
 
 on:
-  workflow_dispatch:   # manual only — run before each new tournament
+  schedule:
+    - cron: '0 6 * * 2'  # Every Tuesday 06:00 UTC (08:00 Swedish summer time)
+  workflow_dispatch:
 
 jobs:
   sync-owgr:
