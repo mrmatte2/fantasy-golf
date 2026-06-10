@@ -10,7 +10,18 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
+  function validatePhone(value) {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (!/^\d+$/.test(trimmed)) return 'Phone number must contain digits only.';
+    if (!trimmed.startsWith('07')) return 'Phone number must start with 07.';
+    if (trimmed.length !== 10) return 'Phone number must be exactly 10 digits.';
+    return null;
+  }
+
   async function handleSave() {
+    const validationError = validatePhone(phone);
+    if (validationError) { setError(validationError); return; }
     setSaving(true);
     setError('');
     const { error: err } = await updateProfile(user.id, { phone_number: phone.trim() || null });
