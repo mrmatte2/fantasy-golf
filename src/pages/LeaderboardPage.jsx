@@ -2,8 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTournament } from '../hooks/useTournament';
-import { getAllRosters, getTournament, getTournamentMembers, getRoundSnapshots, getScoresForPlayers, getHolePars } from '../lib/supabase';
+import { getAllRosters, getTournament, getTournamentMembers, getRoundSnapshots, getScoresForPlayers, getHolePars, getTeeTimes } from '../lib/supabase';
 import { Trophy, Medal, Star, ChevronRight, RefreshCw } from 'lucide-react';
+
+function formatTeeTime(isoString) {
+  if (!isoString) return null;
+  return new Date(isoString).toLocaleTimeString('sv-SE', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm',
+  });
+}
 
 function formatVsPar(vp) {
   if (vp === null || vp === undefined) return '—';
@@ -35,6 +42,7 @@ export default function LeaderboardPage() {
   const [expanded, setExpanded] = useState(null);
   const [selectedRound, setSelectedRound] = useState(null); // null = total view
   const [refreshing, setRefreshing] = useState(false);
+  const [teeTimes, setTeeTimes] = useState({});
 
   useEffect(() => {
     if (tournamentId) loadLeaderboard();
@@ -65,11 +73,13 @@ export default function LeaderboardPage() {
       ...(snapshots || []).map(s => s.player_id),
       ...(rosters || []).filter(r => r.is_active).map(r => r.player_id),
     ])];
-    const [scores, { data: parsData }] = await Promise.all([
+    const [scores, { data: parsData }, teeTimesData] = await Promise.all([
       getScoresForPlayers(pgaId, rosterPlayerIds),
       getHolePars(pgaId),
+      getTeeTimes(pgaId),
     ]);
     setPars(parsData || []);
+    setTeeTimes(teeTimesData);
 
     const roundsWithScores = [...new Set((scores || []).map(s => s.round))].sort((a, b) => a - b);
     setCompletedRounds(roundsWithScores);
@@ -292,18 +302,24 @@ export default function LeaderboardPage() {
                         <div className="px-3 py-2 space-y-0.5">
                           <div className="text-xs text-white/20 uppercase tracking-wider mb-1">Starters</div>
                           {entry.lockedRoster.filter(r => r.slot_type === 'starter').map(r => (
-                            <div key={r.player_id} className="flex justify-between text-xs py-0.5">
-                              <span className="text-masters-cream">{r.players?.name}</span>
-                              <span className="text-white/20 font-mono">—</span>
+                            <div key={r.player_id} className="flex items-center justify-between text-xs py-0.5">
+                              <span className="text-masters-cream flex-1">{r.players?.name}</span>
+                              <span className="text-white/30 font-mono w-12 text-center">
+                                {formatTeeTime(teeTimes[r.player_id]?.[1]) ?? '—'}
+                              </span>
+                              <span className="text-white/20 font-mono w-6 text-right">—</span>
                             </div>
                           ))}
                           {entry.lockedRoster.some(r => r.slot_type === 'sub') && (
                             <>
                               <div className="text-xs text-white/20 uppercase tracking-wider mt-2 mb-1">Substitutes</div>
                               {entry.lockedRoster.filter(r => r.slot_type === 'sub').map(r => (
-                                <div key={r.player_id} className="flex justify-between text-xs py-0.5">
-                                  <span className="text-white/30">{r.players?.name}</span>
-                                  <span className="text-white/20 font-mono">—</span>
+                                <div key={r.player_id} className="flex items-center justify-between text-xs py-0.5">
+                                  <span className="text-white/30 flex-1">{r.players?.name}</span>
+                                  <span className="text-white/20 font-mono w-12 text-center">
+                                    {formatTeeTime(teeTimes[r.player_id]?.[1]) ?? '—'}
+                                  </span>
+                                  <span className="text-white/20 font-mono w-6 text-right">—</span>
                                 </div>
                               ))}
                             </>
@@ -332,7 +348,7 @@ export default function LeaderboardPage() {
                               Roster hidden until first scores arrive
                             </div>
                           ) : (
-                            <RoundPlayerList rb={selectedRb} pars={pars} />
+                            <RoundPlayerList rb={selectedRb} pars={pars} teeTimes={teeTimes} />
                           )}
                         </div>
                       </div>
@@ -360,7 +376,7 @@ export default function LeaderboardPage() {
                                 Roster hidden until first scores arrive
                               </div>
                             ) : (
-                              <RoundPlayerList rb={rb} pars={pars} />
+                              <RoundPlayerList rb={rb} pars={pars} teeTimes={teeTimes} />
                             )}
                           </div>
                         </div>
@@ -412,25 +428,29 @@ function HoleGrid({ holeScores, pars }) {
   );
 }
 
-function PlayerScoreRow({ ss, isCounting, isSub, pars }) {
+function PlayerScoreRow({ ss, isCounting, isSub, pars, teeTime }) {
   const [expanded, setExpanded] = useState(false);
   const hasHoles = ss.holeScores?.length > 0;
+  const formattedTeeTime = formatTeeTime(teeTime);
   return (
     <div>
       <button
         onClick={() => hasHoles && setExpanded(e => !e)}
-        className={`w-full flex items-center justify-between text-xs py-0.5 transition-colors ${
+        className={`w-full flex items-center text-xs py-0.5 transition-colors ${
           isSub ? 'text-white/25' : isCounting ? 'text-masters-cream' : 'text-white/30'
         } ${hasHoles ? 'hover:text-white/60 cursor-pointer' : 'cursor-default'}`}
       >
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1 flex-1">
           {!isSub && isCounting && <Star size={9} className="text-masters-gold fill-masters-gold shrink-0" />}
           {ss.playerName}
           {hasHoles && (
             <ChevronRight size={9} className={`shrink-0 opacity-40 transition-transform ${expanded ? 'rotate-90' : ''}`} />
           )}
         </span>
-        <span className={`font-mono ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
+        <span className="font-mono w-12 text-center text-white/30">
+          {formattedTeeTime ?? ''}
+        </span>
+        <span className={`font-mono w-6 text-right ${ss.holesPlayed > 0 ? vsParClass(ss.roundTotal) : ''}`}>
           {ss.holesPlayed > 0 ? formatVsPar(ss.roundTotal) : '—'}
         </span>
       </button>
@@ -439,7 +459,7 @@ function PlayerScoreRow({ ss, isCounting, isSub, pars }) {
   );
 }
 
-function RoundPlayerList({ rb, pars }) {
+function RoundPlayerList({ rb, pars, teeTimes }) {
   return (
     <div>
       <div className="space-y-0.5">
@@ -447,7 +467,8 @@ function RoundPlayerList({ rb, pars }) {
         {rb.starterScores.map(ss => (
           <PlayerScoreRow key={ss.playerId} ss={ss}
             isCounting={rb.best4.some(b => b.playerId === ss.playerId)}
-            isSub={false} pars={pars} />
+            isSub={false} pars={pars}
+            teeTime={teeTimes?.[ss.playerId]?.[rb.round]} />
         ))}
       </div>
 
@@ -457,7 +478,8 @@ function RoundPlayerList({ rb, pars }) {
           <div className="space-y-0.5">
             {rb.subScores.map(ss => (
               <PlayerScoreRow key={ss.playerId} ss={ss}
-                isCounting={false} isSub={true} pars={pars} />
+                isCounting={false} isSub={true} pars={pars}
+                teeTime={teeTimes?.[ss.playerId]?.[rb.round]} />
             ))}
           </div>
         </div>

@@ -382,6 +382,21 @@ export async function getScoresForPlayers(pgaTournamentId, playerIds) {
   return results.flatMap(({ data }) => data || []);
 }
 
+// Returns { [player_id]: { [round]: isoString } } for all rostered players.
+export async function getTeeTimes(pgaTournamentId) {
+  if (!pgaTournamentId) return {};
+  const { data } = await supabase
+    .from('pga_player_tee_times')
+    .select('player_id, round, tee_time_utc')
+    .eq('pga_tournament_id', pgaTournamentId);
+  const map = {};
+  for (const row of data || []) {
+    if (!map[row.player_id]) map[row.player_id] = {};
+    map[row.player_id][row.round] = row.tee_time_utc;
+  }
+  return map;
+}
+
 export async function getRoundSnapshots(tournamentId) {
   return await supabase
     .from('roster_round_players')
