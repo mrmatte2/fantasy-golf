@@ -382,28 +382,13 @@ async function updateCutStatus(pgaTournamentId, espnEventId, competitorMap) {
 }
 
 // ─── Tee times ────────────────────────────────────────────────────────────────
-// Runs once per calendar day (UTC) during an active tournament.
+// Runs on every sync during an active tournament.
 // Fetches the ESPN per-player status endpoint for each rostered player and
-// writes tee_time_utc + tee_time_round to pga_tournament_players.
-//
-// The status endpoint returns the tee time for the player's current/next round:
-//   { teeTime: "2026-06-18T10:35Z", period: 1, ... }
+// upserts into pga_player_tee_times (pga_tournament_id, player_id, round).
+// Rows are unique per tournament+player+round so all 4 rounds accumulate
+// without overwriting each other.
 
 async function syncTeeTimes(pgaTournamentId, espnEventId, competitorMap) {
-  const today = todayUTC();
-
-  // Skip if already synced today
-  const { data: pgaT } = await supabase
-    .from('pga_tournaments')
-    .select('tee_time_sync_date')
-    .eq('id', pgaTournamentId)
-    .single();
-  if (pgaT?.tee_time_sync_date === today) {
-    console.log('  Tee times: already synced today — skipping.');
-    return;
-  }
-
-  // Collect unique rostered players across all linked fantasy tournaments
   const { data: fantasyTournaments } = await supabase
     .from('tournaments')
     .select('id')
@@ -424,7 +409,7 @@ async function syncTeeTimes(pgaTournamentId, espnEventId, competitorMap) {
 
   if (!rosteredPlayers.length) { console.log('  Tee times: no rostered players found.'); return; }
 
-  let synced = 0;
+  const rows = [];
   for (const rp of rosteredPlayers) {
     const espnComp = competitorMap.get(normName(rp.name));
     if (!espnComp) continue;
@@ -434,29 +419,23 @@ async function syncTeeTimes(pgaTournamentId, espnEventId, competitorMap) {
       const statusData = await espnFetch(statusUrl);
       const teeTimeUtc = statusData?.teeTime ?? null;
       const round = statusData?.period ?? null;
-      if (!teeTimeUtc) continue;
+      if (!teeTimeUtc || !round) continue;
 
-      await supabase
-        .from('pga_tournament_players')
-        .update({ tee_time_utc: teeTimeUtc, tee_time_round: round })
-        .eq('pga_tournament_id', pgaTournamentId)
-        .eq('player_id', rp.id);
-
+      rows.push({ pga_tournament_id: pgaTournamentId, player_id: rp.id, round, tee_time_utc: teeTimeUtc });
       console.log(`  Tee time: ${rp.name} — R${round} @ ${teeTimeUtc}`);
-      synced++;
     } catch (e) {
       console.warn(`  Tee time fetch failed for "${rp.name}": ${e.message}`);
     }
   }
 
-  if (synced > 0) {
-    await supabase
-      .from('pga_tournaments')
-      .update({ tee_time_sync_date: today })
-      .eq('id', pgaTournamentId);
-    console.log(`  Tee times: synced ${synced} players.`);
+  if (rows.length) {
+    const { error } = await supabase
+      .from('pga_player_tee_times')
+      .upsert(rows, { onConflict: 'pga_tournament_id,player_id,round' });
+    if (error) console.warn(`  Tee times upsert failed: ${error.message}`);
+    else console.log(`  Tee times: upserted ${rows.length} rows.`);
   } else {
-    console.log('  Tee times: no tee times returned from ESPN yet — will retry tomorrow.');
+    console.log('  Tee times: no tee times returned from ESPN yet.');
   }
 }
 
