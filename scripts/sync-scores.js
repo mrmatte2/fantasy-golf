@@ -381,6 +381,85 @@ async function updateCutStatus(pgaTournamentId, espnEventId, competitorMap) {
   }
 }
 
+// ─── Tee times ────────────────────────────────────────────────────────────────
+// Runs once per calendar day (UTC) during an active tournament.
+// Fetches the ESPN per-player status endpoint for each rostered player and
+// writes tee_time_utc + tee_time_round to pga_tournament_players.
+//
+// The status endpoint returns the tee time for the player's current/next round:
+//   { teeTime: "2026-06-18T10:35Z", period: 1, ... }
+
+async function syncTeeTimes(pgaTournamentId, espnEventId, competitorMap) {
+  const today = todayUTC();
+
+  // Skip if already synced today
+  const { data: pgaT } = await supabase
+    .from('pga_tournaments')
+    .select('tee_time_sync_date')
+    .eq('id', pgaTournamentId)
+    .single();
+  if (pgaT?.tee_time_sync_date === today) {
+    console.log('  Tee times: already synced today — skipping.');
+    return;
+  }
+
+  // Collect unique rostered players across all linked fantasy tournaments
+  const { data: fantasyTournaments } = await supabase
+    .from('tournaments')
+    .select('id')
+    .eq('pga_tournament_id', pgaTournamentId);
+
+  const ftIds = (fantasyTournaments || []).map(ft => ft.id);
+  if (!ftIds.length) { console.log('  Tee times: no linked fantasy tournaments.'); return; }
+
+  const { data: rosterRows } = await supabase
+    .from('rosters')
+    .select('player_id, players(name)')
+    .in('tournament_id', ftIds)
+    .eq('is_active', true);
+
+  const rosteredPlayers = [...new Map(
+    (rosterRows || []).map(r => [r.player_id, r.players?.name])
+  ).entries()].map(([id, name]) => ({ id, name }));
+
+  if (!rosteredPlayers.length) { console.log('  Tee times: no rostered players found.'); return; }
+
+  let synced = 0;
+  for (const rp of rosteredPlayers) {
+    const espnComp = competitorMap.get(normName(rp.name));
+    if (!espnComp) continue;
+
+    const statusUrl = `https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/${espnEventId}/competitions/${espnEventId}/competitors/${espnComp.id}/status`;
+    try {
+      const statusData = await espnFetch(statusUrl);
+      const teeTimeUtc = statusData?.teeTime ?? null;
+      const round = statusData?.period ?? null;
+      if (!teeTimeUtc) continue;
+
+      await supabase
+        .from('pga_tournament_players')
+        .update({ tee_time_utc: teeTimeUtc, tee_time_round: round })
+        .eq('pga_tournament_id', pgaTournamentId)
+        .eq('player_id', rp.id);
+
+      console.log(`  Tee time: ${rp.name} — R${round} @ ${teeTimeUtc}`);
+      synced++;
+    } catch (e) {
+      console.warn(`  Tee time fetch failed for "${rp.name}": ${e.message}`);
+    }
+  }
+
+  if (synced > 0) {
+    await supabase
+      .from('pga_tournaments')
+      .update({ tee_time_sync_date: today })
+      .eq('id', pgaTournamentId);
+    console.log(`  Tee times: synced ${synced} players.`);
+  } else {
+    console.log('  Tee times: no tee times returned from ESPN yet — will retry tomorrow.');
+  }
+}
+
 // ─── Parsers ──────────────────────────────────────────────────────────────────
 // Each parser receives (url: string) and is responsible for fetching the data
 // and upserting scores into the `scores` table.
@@ -571,6 +650,7 @@ const PARSERS = {
 
     await snapshotRostersIfNewRound(pgaTournamentId);
     await updateCutStatus(pgaTournamentId, espnEventId, competitorMap);
+    await syncTeeTimes(pgaTournamentId, espnEventId, competitorMap);
 
     return { playersMatched: matched, playersCreated: created, scoresUpserted: totalUpserted };
   },
