@@ -9,12 +9,12 @@ export const CHANGELOG = [
       {
         public: true,
         label: 'Withdrawal (WD) support',
-        text: 'Players who withdraw from a tournament now show a WD badge on your team page and are automatically substituted, just like players who miss the cut.',
+        text: 'Players who withdraw from a tournament now show a WD badge on your team page and are automatically replaced by your next available sub in order — no manual action needed.',
       },
       {
         public: true,
-        label: 'DQ instead of DNF',
-        text: 'Teams that cannot field 4 valid starters after auto-subs are now marked DQ (Disqualified) instead of DNF — more accurate to the situation.',
+        label: 'Cleaner status labels',
+        text: "Teams that can't field 4 starters after the cut are now marked DQ instead of DNF.",
       },
       {
         public: false,
