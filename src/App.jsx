@@ -13,6 +13,8 @@ import AdminPage from './pages/AdminPage';
 import RulesPage from './pages/RulesPage';
 import ProfilePage from './pages/ProfilePage';
 import TeamNamePrompt from './components/shared/TeamNamePrompt';
+import WhatsNewModal from './components/shared/WhatsNewModal';
+import { WhatsNewProvider } from './hooks/useWhatsNew';
 
 function AuthEventHandler() {
   const navigate = useNavigate();
@@ -48,11 +50,14 @@ function ProtectedRoute({ children, adminOnly = false }) {
 function AppLayout({ children }) {
   const { user, profile } = useAuth();
   return (
-    <div className="min-h-screen">
-      <Navbar />
-      <main>{children}</main>
-      {user && profile && !profile.team_name && <TeamNamePrompt />}
-    </div>
+    <WhatsNewProvider>
+      <div className="min-h-screen">
+        <Navbar />
+        <main>{children}</main>
+        {user && profile && !profile.team_name && <TeamNamePrompt />}
+        <WhatsNewModal />
+      </div>
+    </WhatsNewProvider>
   );
 }
 

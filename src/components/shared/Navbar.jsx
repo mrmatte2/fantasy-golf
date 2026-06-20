@@ -3,10 +3,12 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useTournament } from '../../hooks/useTournament';
 import { signOut, getUserMembership } from '../../lib/supabase';
-import { Trophy, Users, BarChart3, Settings, LogOut, Menu, X, Lock, Unlock, ChevronLeft, BookOpen, User } from 'lucide-react';
+import { Trophy, Users, BarChart3, Settings, LogOut, Menu, X, Lock, Unlock, ChevronLeft, BookOpen, User, Sparkles } from 'lucide-react';
+import { useWhatsNew } from '../../hooks/useWhatsNew';
 
 export default function Navbar() {
   const { user, profile } = useAuth();
+  const whatsNew = useWhatsNew();
   const { id: tournamentId } = useParams();
   const { tournament } = useTournament(tournamentId);
   const location = useLocation();
@@ -103,6 +105,17 @@ export default function Navbar() {
               </Link>
             ))}
 
+            {whatsNew && (
+              <button onClick={() => whatsNew.setOpen(true)}
+                className="relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-white/60 hover:text-masters-cream hover:bg-white/5 transition-colors">
+                <Sparkles size={15} />
+                <span className="hidden md:inline">What's New</span>
+                {whatsNew.hasUnseen && (
+                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-masters-gold" />
+                )}
+              </button>
+            )}
+
             <div className="ml-2 pl-2 border-l border-white/10 flex items-center gap-2">
               <span className="text-xs text-white/40">{profile?.username}</span>
               <button onClick={handleSignOut}
@@ -136,6 +149,16 @@ export default function Navbar() {
               <Icon size={16} /> {label}
             </Link>
           ))}
+          {whatsNew && (
+            <button onClick={() => { whatsNew.setOpen(true); setMobileOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-white/70">
+              <Sparkles size={16} />
+              What's New
+              {whatsNew.hasUnseen && (
+                <span className="ml-auto w-2 h-2 rounded-full bg-masters-gold" />
+              )}
+            </button>
+          )}
           <button onClick={handleSignOut}
             className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-red-400 hover:bg-red-900/20 transition-colors">
             <LogOut size={16} /> Sign out ({profile?.username})
