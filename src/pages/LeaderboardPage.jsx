@@ -82,7 +82,9 @@ export default function LeaderboardPage() {
     setTeeTimes(teeTimesData);
 
     const roundsWithScores = [...new Set((scores || []).map(s => s.round))].sort((a, b) => a - b);
-    setCompletedRounds(roundsWithScores);
+    // A round is "started" as soon as its snapshot exists, even before rostered players have scores
+    const roundsStarted = [...new Set((snapshots || []).map(s => s.round))].sort((a, b) => a - b);
+    setCompletedRounds(roundsStarted.length > 0 ? roundsStarted : roundsWithScores);
 
     const lockedRounds = new Set((snapshots || []).map(s => s.round));
 
@@ -95,7 +97,7 @@ export default function LeaderboardPage() {
       const roundBreakdown = [];
       const isDnf = !!member.is_dnf;
 
-      for (const round of roundsWithScores) {
+      for (const round of (roundsStarted.length > 0 ? roundsStarted : roundsWithScores)) {
         const isLocked = lockedRounds.has(round);
         // DNF teams score nothing from R3 onward
         const isDnfRound = isDnf && cutRound > 0 && round > cutRound;
