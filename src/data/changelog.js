@@ -8,6 +8,11 @@ export const CHANGELOG = [
     entries: [
       {
         public: true,
+        label: 'Smarter live scoring',
+        text: 'While a round is in progress, any starter who hasn\'t teed off yet is automatically treated as your drop score. Once all 5 starters are on the course, your worst scorer is dropped as usual.',
+      },
+      {
+        public: true,
         label: 'Withdrawal (WD) support',
         text: 'Players who withdraw from a tournament now show a WD badge on your team page and are automatically replaced by your next available sub in order — no manual action needed.',
       },
