@@ -264,28 +264,11 @@ async function updateCutStatus(pgaTournamentId, espnEventId, competitorMap) {
     return;
   }
 
-  // 3. R3 not started?
-  const { data: r3Sample } = await supabase
-    .from('scores')
-    .select('player_id')
-    .eq('pga_tournament_id', pgaTournamentId)
-    .eq('round', 3)
-    .limit(1);
-  if (r3Sample?.length) {
-    // R3 has started but cut_checked is still false — this shouldn't happen in
-    // normal flow (cut check would have fired between R2 end and R3 start),
-    // but if it did, mark all unset players as made_cut = true conservatively.
-    console.log('  Cut check: R3 already started but cut_checked=false — marking remaining players as made cut.');
-    await supabase
-      .from('pga_tournament_players')
-      .update({ made_cut: true })
-      .eq('pga_tournament_id', pgaTournamentId)
-      .is('made_cut', null);
-    await supabase.from('pga_tournaments').update({ cut_checked: true }).eq('id', pgaTournamentId);
-    return;
-  }
-
-  // 4. Is R2 ≥ 85% complete?
+  // 3. Is R2 ≥ 85% complete?
+  // Note: we intentionally do NOT gate on "R3 not started" — STATUS_CUT is permanent
+  // and the ESPN status endpoint is reliable at any point after the cut is made.
+  // Removing that guard means the cut check can recover even if it missed the
+  // R2→R3 window (e.g. sync was down overnight).
   const { data: r2Rows } = await supabase
     .from('scores')
     .select('player_id')
@@ -308,7 +291,7 @@ async function updateCutStatus(pgaTournamentId, espnEventId, competitorMap) {
 
   console.log(`  Cut check: R2 ${Math.round(ratio * 100)}% complete — running cut detection.`);
 
-  // 5. Collect unique rostered players across all fantasy tournaments linked to this PGA event
+  // 4. Collect unique rostered players across all fantasy tournaments linked to this PGA event
   const { data: fantasyTournaments } = await supabase
     .from('tournaments')
     .select('id')
@@ -330,7 +313,7 @@ async function updateCutStatus(pgaTournamentId, espnEventId, competitorMap) {
 
   if (!rosteredPlayers.length) { console.log('  Cut check: no rostered players found.'); return; }
 
-  // 6. Fetch ESPN status for each rostered player
+  // 5. Fetch ESPN status for each rostered player
   // Status URL: sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/{eventId}/competitions/{eventId}/competitors/{competitorId}/status
   let cutFound = 0;
   const updates = [];
@@ -360,7 +343,7 @@ async function updateCutStatus(pgaTournamentId, espnEventId, competitorMap) {
     return;
   }
 
-  // 7. Write made_cut to pga_tournament_players
+  // 6. Write made_cut to pga_tournament_players
   for (const upd of updates) {
     await supabase
       .from('pga_tournament_players')
@@ -370,7 +353,7 @@ async function updateCutStatus(pgaTournamentId, espnEventId, competitorMap) {
   }
   console.log(`  Cut check: ${cutFound} missed cut, ${updates.length - cutFound} made cut.`);
 
-  // 8. Seal the flag only once ESPN has confirmed at least one cut player.
+  // 7. Seal the flag only once ESPN has confirmed at least one cut player.
   //    If ESPN returns everyone as in-progress (mid-R2), we skip sealing so
   //    the next 15-min run retries automatically.
   if (cutFound > 0) {
