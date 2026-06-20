@@ -383,11 +383,11 @@ export default function MyTeamPage() {
         )}
       </div>
 
-      {membership.is_dnf && (
+      {membership.is_dq && (
         <div className="mb-5 px-4 py-3 rounded-xl bg-red-950/40 border border-red-700/50 flex items-center gap-3 text-red-300 text-sm">
           <AlertTriangle size={15} className="shrink-0" />
           <div>
-            <div className="font-semibold">Team DNF</div>
+            <div className="font-semibold">Team DQ</div>
             <div className="text-red-300/60 text-xs mt-0.5">
               Your team couldn't field 4 valid starters after the cut — no score for R3 or R4.
             </div>

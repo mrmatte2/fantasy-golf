@@ -147,14 +147,14 @@ create table public.tournaments (
 -- ============================================================
 -- TOURNAMENT MEMBERSHIPS (user joins a fantasy tournament)
 -- team_name: copied from profile.team_name at join time
--- is_dnf: set true if user can't field 4 valid starters after auto-sub
+-- is_dq: set true if user can't field 4 valid starters after auto-sub
 -- ============================================================
 create table public.tournament_memberships (
   id             uuid primary key default uuid_generate_v4(),
   tournament_id  uuid references public.tournaments(id) on delete cascade,
   user_id        uuid references public.profiles(id) on delete cascade,
   team_name      text not null,
-  is_dnf         boolean not null default false,
+  is_dq          boolean not null default false,
   created_at     timestamptz default now(),
   unique(tournament_id, user_id)
 );

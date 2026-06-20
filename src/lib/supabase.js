@@ -203,10 +203,10 @@ export async function getTournamentMembers(tournamentId) {
     .eq('tournament_id', tournamentId);
 }
 
-export async function setMemberDnf(tournamentId, userId, isDnf) {
+export async function setMemberDq(tournamentId, userId, isDq) {
   return await supabase
     .from('tournament_memberships')
-    .update({ is_dnf: isDnf })
+    .update({ is_dq: isDq })
     .eq('tournament_id', tournamentId)
     .eq('user_id', userId);
 }

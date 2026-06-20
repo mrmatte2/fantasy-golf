@@ -89,18 +89,18 @@ export default function LeaderboardPage() {
     const lockedRounds = new Set((snapshots || []).map(s => s.round));
 
     // Determine the cut round (highest round with a snapshot that is ≤ 2,
-    // i.e. the round after which the cut happened). DNF only applies from R3+.
+    // i.e. the round after which the cut happened). DQ only applies from R3+.
     const cutRound = Math.max(0, ...[...lockedRounds].filter(r => r <= 2));
 
     const board = members.map(member => {
       let totalVsPar = 0;
       const roundBreakdown = [];
-      const isDnf = !!member.is_dnf;
+      const isDq = !!member.is_dq;
 
       for (const round of (roundsStarted.length > 0 ? roundsStarted : roundsWithScores)) {
         const isLocked = lockedRounds.has(round);
-        // DNF teams score nothing from R3 onward
-        const isDnfRound = isDnf && cutRound > 0 && round > cutRound;
+        // DQ teams score nothing from R3 onward
+        const isDqRound = isDq && cutRound > 0 && round > cutRound;
 
         const startersForRound = isLocked
           ? (snapshots || []).filter(s => s.user_id === member.user_id && s.round === round && s.slot_type === 'starter')
@@ -129,9 +129,9 @@ export default function LeaderboardPage() {
         const scored = starterScores.filter(s => s.holesPlayed > 0).sort((a, b) => a.roundTotal - b.roundTotal);
         // 0 started → null; 1 started → count it; 2+ started → drop worst 1, count rest (max 4)
         const best4 = scored.length <= 1 ? scored : scored.slice(0, Math.min(4, scored.length - 1));
-        const roundVsPar = isDnfRound ? null : (best4.length > 0 ? best4.reduce((sum, s) => sum + s.roundTotal, 0) : null);
-        if (!isDnfRound && roundVsPar !== null) totalVsPar += roundVsPar;
-        roundBreakdown.push({ round, roundVsPar, starterScores, subScores, best4, isLocked, isDnfRound });
+        const roundVsPar = isDqRound ? null : (best4.length > 0 ? best4.reduce((sum, s) => sum + s.roundTotal, 0) : null);
+        if (!isDqRound && roundVsPar !== null) totalVsPar += roundVsPar;
+        roundBreakdown.push({ round, roundVsPar, starterScores, subScores, best4, isLocked, isDqRound });
       }
 
       // Pre-game roster: used when tournament is locked but no scores yet
@@ -144,7 +144,7 @@ export default function LeaderboardPage() {
         userId: member.user_id,
         username: member.profiles?.username,
         teamName: member.team_name,
-        isDnf,
+        isDq,
         totalVsPar: roundsWithScores.length > 0 ? totalVsPar : null,
         roundBreakdown,
         lockedRoster,
@@ -258,14 +258,14 @@ export default function LeaderboardPage() {
                     <div className="flex items-center justify-center w-6">{positionIcon(position)}</div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`font-display font-semibold ${entry.isDnf ? 'text-white/40' : 'text-masters-cream'}`}>
+                        <span className={`font-display font-semibold ${entry.isDq ? 'text-white/40' : 'text-masters-cream'}`}>
                           {entry.teamName || entry.username}
                         </span>
                         {isMe && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-masters-gold/20 text-masters-gold border border-masters-gold/30">You</span>
                         )}
-                        {entry.isDnf && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-400 border border-red-800/40">DNF</span>
+                        {entry.isDq && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-400 border border-red-800/40">DQ</span>
                         )}
                       </div>
                       {/* Per-round sub-scores shown under the team name */}
@@ -366,8 +366,8 @@ export default function LeaderboardPage() {
                               : <span className="text-xs text-white/20">· in progress</span>
                             }
                             {rb.isLocked && (
-                              <span className={`ml-auto font-mono text-sm font-bold ${rb.isDnfRound ? 'text-red-500/60' : vsParClass(rb.roundVsPar)}`}>
-                                {rb.isDnfRound ? 'DNF' : formatVsPar(rb.roundVsPar)}
+                              <span className={`ml-auto font-mono text-sm font-bold ${rb.isDqRound ? 'text-red-500/60' : vsParClass(rb.roundVsPar)}`}>
+                                {rb.isDqRound ? 'DQ' : formatVsPar(rb.roundVsPar)}
                               </span>
                             )}
                           </div>

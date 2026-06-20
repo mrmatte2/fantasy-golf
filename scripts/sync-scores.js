@@ -99,9 +99,9 @@ async function createPlayer(name) {
   return data.id;
 }
 
-// ─── Auto-sub & DNF (runs before R2+ snapshots) ───────────────────────────────
+// ─── Auto-sub & DQ (runs before R2+ snapshots) ────────────────────────────────
 // Replaces invalid starters (missed cut OR withdrawn) with available subs.
-// If a team can't field 4 valid starters after auto-subbing, marks them DNF.
+// If a team can't field 4 valid starters after auto-subbing, marks them DQ.
 // WD is checked always; cut is only applied once cut_checked = true.
 
 async function autoSubCutPlayers(pgaTournamentId) {
@@ -166,14 +166,14 @@ async function autoSubCutPlayers(pgaTournamentId) {
         console.log(`  Auto-sub [${reason}]: ${out.players?.name} ← ${inSub.players?.name} (slot ${out.slot_number})`);
       }
 
-      // DNF check: valid starters = original valid starters + newly swapped-in subs
+      // DQ check: valid starters = original valid starters + newly swapped-in subs
       const validStarters = starters.filter(r => !isInvalid(r)).length + swapCount;
       if (validStarters < 4) {
         await supabase.from('tournament_memberships')
-          .update({ is_dnf: true })
+          .update({ is_dq: true })
           .eq('tournament_id', ft.id)
           .eq('user_id', userId);
-        console.log(`  DNF: user ${userId} — only ${validStarters} valid starters after auto-sub`);
+        console.log(`  DQ: user ${userId} — only ${validStarters} valid starters after auto-sub`);
       }
     }
   }

@@ -165,15 +165,15 @@ export default function RulesPage() {
         </Rule>
       </Section>
 
-      {/* DNF */}
-      <Section icon={AlertTriangle} title="DNF — Did Not Finish">
+      {/* DQ */}
+      <Section icon={AlertTriangle} title="DQ — Disqualified">
         <p>
           In rare cases a team may not be able to field a competitive lineup after the cut.
         </p>
         <Rule label="Trigger">
           If your team cannot field at least <span className="text-masters-cream font-medium">4 valid starters</span>{' '}
           for Round 3 after all auto-subs have been applied, your team is marked{' '}
-          <Pill color="red">DNF</Pill> and receives no score for Rounds 3 and 4.
+          <Pill color="red">DQ</Pill> and receives no score for Rounds 3 and 4.
         </Rule>
         <Rule label="How to avoid it">
           Draft at least 3 subs who are likely to make the cut, and set your sub order so the
