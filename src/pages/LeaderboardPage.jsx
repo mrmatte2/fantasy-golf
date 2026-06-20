@@ -167,6 +167,7 @@ export default function LeaderboardPage() {
       return { ...entry, displayScore };
     });
     return list.sort((a, b) => {
+      if (a.isDq !== b.isDq) return a.isDq ? 1 : -1;
       if (a.displayScore === null && b.displayScore === null) return 0;
       if (a.displayScore === null) return 1;
       if (b.displayScore === null) return -1;
