@@ -99,9 +99,10 @@ async function createPlayer(name) {
   return data.id;
 }
 
-// ─── Auto-sub & DNF (runs before R3+ snapshots) ───────────────────────────────
-// Replaces cut starters with available subs in slot_number order.
+// ─── Auto-sub & DNF (runs before R2+ snapshots) ───────────────────────────────
+// Replaces invalid starters (missed cut OR withdrawn) with available subs.
 // If a team can't field 4 valid starters after auto-subbing, marks them DNF.
+// WD is checked always; cut is only applied once cut_checked = true.
 
 async function autoSubCutPlayers(pgaTournamentId) {
   const { data: pgaT } = await supabase
@@ -109,16 +110,19 @@ async function autoSubCutPlayers(pgaTournamentId) {
     .select('cut_checked')
     .eq('id', pgaTournamentId)
     .single();
-  if (!pgaT?.cut_checked) return; // cut not yet determined
 
-  // Build cut status map: player_id → made_cut (true/false/null)
-  const { data: cutData } = await supabase
+  // Build per-tournament player status map: player_id → { made_cut, is_withdrawn }
+  const { data: ptpData } = await supabase
     .from('pga_tournament_players')
-    .select('player_id, made_cut')
+    .select('player_id, made_cut, is_withdrawn')
     .eq('pga_tournament_id', pgaTournamentId);
-  const cutStatus = Object.fromEntries((cutData || []).map(r => [r.player_id, r.made_cut]));
+  const playerStatus = Object.fromEntries((ptpData || []).map(r => [r.player_id, r]));
 
-  const isInvalid = (r) => cutStatus[r.player_id] === false || r.players?.is_withdrawn;
+  // A player is invalid if they've withdrawn (always) or missed the cut (once determined)
+  const isInvalid = (r) => {
+    const s = playerStatus[r.player_id];
+    return s?.is_withdrawn === true || (pgaT?.cut_checked && s?.made_cut === false);
+  };
 
   const { data: fantasyTournaments } = await supabase
     .from('tournaments')
@@ -128,7 +132,7 @@ async function autoSubCutPlayers(pgaTournamentId) {
   for (const ft of fantasyTournaments || []) {
     const { data: rosters } = await supabase
       .from('rosters')
-      .select('id, user_id, player_id, slot_type, slot_number, players(name, is_withdrawn)')
+      .select('id, user_id, player_id, slot_type, slot_number, players(name)')
       .eq('tournament_id', ft.id)
       .eq('is_active', true)
       .order('slot_number');
@@ -158,7 +162,8 @@ async function autoSubCutPlayers(pgaTournamentId) {
         await supabase.from('rosters')
           .update({ slot_type: 'starter', slot_number: out.slot_number })
           .eq('id', inSub.id);
-        console.log(`  Auto-sub: ${out.players?.name} ← ${inSub.players?.name} (slot ${out.slot_number})`);
+        const reason = playerStatus[out.player_id]?.is_withdrawn ? 'WD' : 'CUT';
+        console.log(`  Auto-sub [${reason}]: ${out.players?.name} ← ${inSub.players?.name} (slot ${out.slot_number})`);
       }
 
       // DNF check: valid starters = original valid starters + newly swapped-in subs
@@ -198,10 +203,9 @@ async function snapshotRostersIfNewRound(pgaTournamentId) {
 
     for (const round of rounds) {
       if (snapped.has(round)) continue;
-      // Before snapshotting R3+, auto-sub any cut starters that the user
-      // hasn't manually resolved. This is idempotent — if no cut starters
-      // remain in starter slots, it's a no-op.
-      if (round >= 3) await autoSubCutPlayers(pgaTournamentId);
+      // Before snapshotting R2+, auto-sub any invalid starters (WD or missed cut)
+      // that the user hasn't manually resolved. Idempotent — no-op if already clean.
+      if (round >= 2) await autoSubCutPlayers(pgaTournamentId);
 
       const { data: rosters } = await supabase
         .from('rosters')
@@ -422,6 +426,59 @@ async function syncTeeTimes(pgaTournamentId, espnEventId, competitorMap) {
   }
 }
 
+// ─── Withdrawal sync ─────────────────────────────────────────────────────────
+// Runs on every sync. Checks ESPN status for all rostered players and sets
+// is_withdrawn = true on pga_tournament_players when ESPN returns displayValue "WD".
+// Also clears the flag if a WD is reversed (re-entry edge case).
+
+async function syncWithdrawals(pgaTournamentId, espnEventId, competitorMap) {
+  const { data: fantasyTournaments } = await supabase
+    .from('tournaments')
+    .select('id')
+    .eq('pga_tournament_id', pgaTournamentId);
+
+  const ftIds = (fantasyTournaments || []).map(ft => ft.id);
+  if (!ftIds.length) return;
+
+  const { data: rosterRows } = await supabase
+    .from('rosters')
+    .select('player_id, players(name)')
+    .in('tournament_id', ftIds)
+    .eq('is_active', true);
+
+  const rosteredPlayers = [...new Map(
+    (rosterRows || []).map(r => [r.player_id, r.players?.name])
+  ).entries()].map(([id, name]) => ({ id, name }));
+
+  if (!rosteredPlayers.length) return;
+
+  let wdCount = 0;
+  for (const rp of rosteredPlayers) {
+    const espnComp = competitorMap.get(normName(rp.name));
+    if (!espnComp) continue;
+
+    const statusUrl = `https://sports.core.api.espn.com/v2/sports/golf/leagues/pga/events/${espnEventId}/competitions/${espnEventId}/competitors/${espnComp.id}/status`;
+    try {
+      const statusData = await espnFetch(statusUrl);
+      const isWD = statusData?.displayValue === 'WD' || statusData?.type?.shortDetail === 'WD';
+
+      if (isWD) {
+        await supabase
+          .from('pga_tournament_players')
+          .update({ is_withdrawn: true, made_cut: false })
+          .eq('pga_tournament_id', pgaTournamentId)
+          .eq('player_id', rp.id)
+          .eq('is_withdrawn', false); // only write if not already set
+        wdCount++;
+        console.log(`  WD detected: ${rp.name}`);
+      }
+    } catch (e) {
+      console.warn(`  WD check failed for "${rp.name}": ${e.message}`);
+    }
+  }
+  if (wdCount > 0) console.log(`  Withdrawal sync: ${wdCount} new withdrawal(s)`);
+}
+
 // ─── Parsers ──────────────────────────────────────────────────────────────────
 // Each parser receives (url: string) and is responsible for fetching the data
 // and upserting scores into the `scores` table.
@@ -611,6 +668,7 @@ const PARSERS = {
     }
 
     await snapshotRostersIfNewRound(pgaTournamentId);
+    await syncWithdrawals(pgaTournamentId, espnEventId, competitorMap);
     await updateCutStatus(pgaTournamentId, espnEventId, competitorMap);
     await syncTeeTimes(pgaTournamentId, espnEventId, competitorMap);
 

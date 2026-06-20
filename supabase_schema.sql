@@ -72,6 +72,7 @@ create table public.pga_tournaments (
 -- ============================================================
 -- PGA TOURNAMENT PLAYERS (field membership per PGA event)
 -- made_cut: null = not determined, true = made cut, false = missed cut
+-- is_withdrawn: set true when ESPN returns WD status; also sets made_cut = false
 -- ============================================================
 create table public.pga_tournament_players (
   id                 uuid primary key default uuid_generate_v4(),
@@ -79,6 +80,7 @@ create table public.pga_tournament_players (
   player_id          uuid references public.players(id) on delete cascade,
   is_in_field        boolean default true,
   made_cut           boolean,
+  is_withdrawn       boolean not null default false,
   unique(pga_tournament_id, player_id)
 );
 
@@ -121,7 +123,6 @@ create table public.players (
   owgr_id        text,
   masters_id     text,
   is_active      boolean default true,
-  is_withdrawn   boolean default false,
   created_at     timestamptz default now()
 );
 

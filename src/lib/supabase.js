@@ -93,7 +93,7 @@ export async function getPgaFieldCounts() {
 export async function getPgaField(pgaTournamentId) {
   return await supabase
     .from('pga_tournament_players')
-    .select('*, players(id, name, country, world_ranking, owgr_id, is_withdrawn)')
+    .select('*, players(id, name, country, world_ranking, owgr_id)')
     .eq('pga_tournament_id', pgaTournamentId)
     .order('players(world_ranking)');
 }
@@ -225,10 +225,10 @@ export async function getTournamentPlayers(tournamentId) {
   if (pgaTournamentId) {
     const { data, error } = await supabase
       .from('pga_tournament_players')
-      .select('players(*)')
+      .select('is_withdrawn, made_cut, players(*)')
       .eq('pga_tournament_id', pgaTournamentId)
       .eq('is_in_field', true);
-    return { data: (data || []).map(fp => fp.players).filter(Boolean), error };
+    return { data: (data || []).map(fp => ({ ...fp.players, is_withdrawn: fp.is_withdrawn ?? false, made_cut: fp.made_cut })).filter(Boolean), error };
   }
 
   // Fallback for standalone tournaments (no linked PGA event)
@@ -400,19 +400,20 @@ export async function getTeeTimes(pgaTournamentId) {
 export async function getRoundSnapshots(tournamentId) {
   return await supabase
     .from('roster_round_players')
-    .select('round, user_id, player_id, slot_type, players(id, name, world_ranking, is_withdrawn)')
+    .select('round, user_id, player_id, slot_type, players(id, name, world_ranking)')
     .eq('tournament_id', tournamentId);
 }
 
 // Returns { [player_id]: true | false | null } for a PGA tournament.
 // null = cut check not yet run; false = missed cut; true = made cut.
+// Returns { [player_id]: { made_cut: bool|null, is_withdrawn: bool } }
 export async function getTournamentCutStatus(pgaTournamentId) {
   if (!pgaTournamentId) return {};
   const { data } = await supabase
     .from('pga_tournament_players')
-    .select('player_id, made_cut')
+    .select('player_id, made_cut, is_withdrawn')
     .eq('pga_tournament_id', pgaTournamentId);
-  return Object.fromEntries((data || []).map(r => [r.player_id, r.made_cut]));
+  return Object.fromEntries((data || []).map(r => [r.player_id, { made_cut: r.made_cut, is_withdrawn: r.is_withdrawn ?? false }]));
 }
 
 export async function getLockedRounds(tournamentId) {

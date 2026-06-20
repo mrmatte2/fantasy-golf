@@ -1106,7 +1106,6 @@ function PlayersTab() {
   function startEdit(player) {
     setEditModal(player);
     setEditForm({
-      is_withdrawn: player.is_withdrawn,
       is_active: player.is_active,
       world_ranking: player.world_ranking ?? '',
     });
@@ -1116,7 +1115,6 @@ function PlayersTab() {
     const player = editModal;
     setSaving(true);
     await updatePlayer(player.id, {
-      is_withdrawn: editForm.is_withdrawn,
       is_active: editForm.is_active,
       world_ranking: editForm.world_ranking !== '' ? parseInt(editForm.world_ranking) : player.world_ranking,
     });
@@ -1179,7 +1177,6 @@ function PlayersTab() {
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-masters-cream font-medium">{player.name}</span>
-                        {player.is_withdrawn && <span className="badge-wd">WD</span>}
                         {!player.is_active && <span className="text-xs text-white/30 italic">inactive</span>}
                       </div>
                       <div className="text-xs text-white/30 sm:hidden mt-0.5">
@@ -1239,11 +1236,6 @@ function PlayersTab() {
                 <input type="checkbox" checked={editForm.is_active}
                   onChange={e => setEditForm(f => ({ ...f, is_active: e.target.checked }))} />
                 Active
-              </label>
-              <label className="flex items-center gap-2 text-sm text-white/60 cursor-pointer">
-                <input type="checkbox" checked={editForm.is_withdrawn}
-                  onChange={e => setEditForm(f => ({ ...f, is_withdrawn: e.target.checked }))} />
-                Withdrawn (WD)
               </label>
             </div>
             <div className="flex gap-3 mt-5">

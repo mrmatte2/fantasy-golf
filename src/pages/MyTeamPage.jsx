@@ -79,15 +79,15 @@ function HoleByHoleRow({ scores, pars, round }) {
   );
 }
 
-function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubClick, isLocked, isSub, madeCut, swapBlocked }) {
+function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubClick, isLocked, isSub, madeCut, isWithdrawn, swapBlocked }) {
   const [expanded, setExpanded] = useState(false);
   const player = rosterEntry.players;
   const roundScores = (scores || []).filter(s => s.round === currentRound);
   const roundTotal = roundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
   const holesPlayed = roundScores.length;
   // madeCut: true = made cut, false = missed cut, null/undefined = not yet determined
-  const missedCut = madeCut === false && !player?.is_withdrawn;
-  const needsSub = !isSub && missedCut && !isLocked;
+  const missedCut = madeCut === false && !isWithdrawn;
+  const needsSub = !isSub && (missedCut || isWithdrawn) && !isLocked;
 
   return (
     <div className={`rounded-xl border transition-all ${
@@ -110,7 +110,7 @@ function PlayerRow({ rosterEntry, isTopFour, scores, pars, currentRound, onSubCl
                 {player?.name}
               </span>
               <TierBadge worldRanking={player?.world_ranking} />
-              {player?.is_withdrawn && <span className="badge-wd">WD</span>}
+              {isWithdrawn && <span className="badge-wd">WD</span>}
               {missedCut && <span className="badge-cut">MISSED CUT</span>}
               {isSub && !missedCut && <span className="badge-sub">Sub</span>}
               {isSub && missedCut && <span className="text-xs text-red-400/60">Sub · Cut</span>}
@@ -402,8 +402,8 @@ export default function MyTeamPage() {
       )}
 
       {(() => {
-        const cutStarters = starters.filter(r => cutStatus[r.player_id] === false && !r.players?.is_withdrawn);
-        const cutSubs = subsRoster.filter(r => cutStatus[r.player_id] === false && !r.players?.is_withdrawn);
+        const cutStarters = starters.filter(r => cutStatus[r.player_id]?.made_cut === false && !cutStatus[r.player_id]?.is_withdrawn);
+        const cutSubs = subsRoster.filter(r => cutStatus[r.player_id]?.made_cut === false && !cutStatus[r.player_id]?.is_withdrawn);
         if (cutStarters.length === 0) return null;
         return (
           <div className="mb-5 px-4 py-3 rounded-xl bg-red-900/20 border border-red-800/30 text-sm">
@@ -489,7 +489,8 @@ export default function MyTeamPage() {
               <PlayerRow key={r.id} rosterEntry={r} isTopFour={topFourIds.has(r.player_id)}
                 scores={scores[r.player_id]} pars={pars} currentRound={currentRound}
                 onSubClick={openSubModal} isLocked={isLocked} isSub={false}
-                madeCut={cutStatus[r.player_id] ?? null}
+                madeCut={cutStatus[r.player_id]?.made_cut ?? null}
+                isWithdrawn={cutStatus[r.player_id]?.is_withdrawn ?? false}
                 swapBlocked={isOnlyCTierStarter} />
             );
           })}
@@ -539,7 +540,8 @@ export default function MyTeamPage() {
                 <PlayerRow rosterEntry={r} isTopFour={false}
                   scores={scores[r.player_id]} pars={pars} currentRound={currentRound}
                   onSubClick={() => {}} isLocked={isLocked} isSub={true}
-                  madeCut={cutStatus[r.player_id] ?? null} />
+                  madeCut={cutStatus[r.player_id]?.made_cut ?? null}
+                  isWithdrawn={cutStatus[r.player_id]?.is_withdrawn ?? false} />
               </div>
             </div>
           ))}
@@ -561,12 +563,12 @@ export default function MyTeamPage() {
               {subs.length === 0 && <p className="text-white/30 text-sm text-center py-4">No substitutes available</p>}
               {subs
                 .sort((a, b) => {
-                  const aOk = cutStatus[a.player_id] !== false && !a.players?.is_withdrawn;
-                  const bOk = cutStatus[b.player_id] !== false && !b.players?.is_withdrawn;
+                  const aOk = cutStatus[a.player_id]?.made_cut !== false && !cutStatus[a.player_id]?.is_withdrawn;
+                  const bOk = cutStatus[b.player_id]?.made_cut !== false && !cutStatus[b.player_id]?.is_withdrawn;
                   return bOk - aOk;
                 })
                 .map(sub => {
-                  const survived = cutStatus[sub.player_id] !== false && !sub.players?.is_withdrawn;
+                  const survived = cutStatus[sub.player_id]?.made_cut !== false && !cutStatus[sub.player_id]?.is_withdrawn;
                   const subRoundScores = currentRound > 0
                     ? (scores[sub.player_id] || []).filter(s => s.round === currentRound)
                     : [];
@@ -599,7 +601,9 @@ export default function MyTeamPage() {
                         <span>#{sub.players?.world_ranking} WR</span>
                         {survived
                           ? <span className="text-green-400">✓ Made cut</span>
-                          : <span className="text-red-400">✗ Missed cut</span>
+                          : cutStatus[sub.player_id]?.is_withdrawn
+                            ? <span className="text-red-400">✗ Withdrawn</span>
+                            : <span className="text-red-400">✗ Missed cut</span>
                         }
                       </div>
                     </button>
