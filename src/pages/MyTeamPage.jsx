@@ -224,7 +224,10 @@ export default function MyTeamPage() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const allScoresList = Object.values(scores).flat();
-  const currentRound = allScoresList.length > 0 ? Math.max(...allScoresList.map(s => s.round)) : 0;
+  const maxScoreRound = allScoresList.length > 0 ? Math.max(...allScoresList.map(s => s.round)) : 0;
+  // A snapshot being created means that round has started — use whichever is higher.
+  const maxLockedRound = lockedRounds.length > 0 ? Math.max(...lockedRounds) : 0;
+  const currentRound = Math.max(maxScoreRound, maxLockedRound);
   // Subs are blocked only while a round has scores but no snapshot yet (the brief sync window).
   // Once snapshotted, the round is frozen — subs only affect future rounds, so allow them.
   const isLocked = currentRound > 0 && !lockedRounds.includes(currentRound);
@@ -265,7 +268,11 @@ export default function MyTeamPage() {
   }
 
   const currentStarterIds = starters.map(r => r.player_id);
-  const allScoreRounds = [...new Set(Object.values(scores).flat().map(s => s.round))].sort();
+  // Include snapshot rounds even if no rostered players have scores yet for that round.
+  const allScoreRounds = [...new Set([
+    ...Object.values(scores).flat().map(s => s.round),
+    ...lockedRounds,
+  ])].sort((a, b) => a - b);
 
   // Per-round breakdown: locked rounds use snapshot, current round uses current roster
   const roundBreakdown = allScoreRounds.map(round => {
