@@ -36,4 +36,4 @@ export const CHANGELOG = [
 ];
 
 // Bump this whenever a new public entry is added — drives the "unseen" dot in the nav.
-export const LATEST_VERSION = '2026-06-20';
+export const LATEST_VERSION = '2026-06-20b';
