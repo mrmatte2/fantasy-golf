@@ -60,7 +60,7 @@ export default function RulesPage() {
       <Section icon={Trophy} title="Overview">
         <p>
           Fantasy Golf is a pick-and-score game tied to real PGA Tour events. Before the tournament
-          starts you draft a team of 8 players within a fixed budget. Over the four rounds of the
+          starts you draft a team of 9 players within a fixed budget. Over the four rounds of the
           tournament your team accumulates a score based on how your players perform on the course —
           the team with the lowest (best) total score at the end wins.
         </p>
@@ -79,20 +79,20 @@ export default function RulesPage() {
         <Rule label="Tier limits">
           <span className="text-yellow-400 font-bold">S Tier</span> (Rank 1–3): pick 1 ·{' '}
           <span className="text-masters-gold font-bold">A Tier</span> (Rank 4–15): pick up to 2 ·{' '}
-          <span className="text-blue-400 font-bold">B Tier</span> (Rank 16–40): pick up to 2 ·{' '}
+          <span className="text-blue-400 font-bold">B Tier</span> (Rank 16–40): pick up to 3 ·{' '}
           <span className="text-white/60 font-bold">C Tier</span> (Rank 41+): unlimited
         </Rule>
         <Rule label="Roster size">
           Pick exactly <span className="text-masters-cream font-medium">5 Starters</span> and{' '}
-          <span className="text-masters-cream font-medium">3 Substitutes</span>. Tier limits apply
-          across all 8 picks combined.
+          <span className="text-masters-cream font-medium">4 Substitutes</span>. Tier limits apply
+          across all 9 picks combined.
         </Rule>
         <Rule label="C-tier requirement">
           For Round 1 and Round 2 your starting lineup must include at least one C-tier player.
           This requirement is lifted from Round 3 onwards.
         </Rule>
         <Rule label="Substitution order">
-          Your subs are ranked <Pill>S1</Pill> <Pill>S2</Pill> <Pill>S3</Pill>. The order matters —
+          Your subs are ranked <Pill>S1</Pill> <Pill>S2</Pill> <Pill>S3</Pill> <Pill>S4</Pill>. The order matters —
           S1 is called up first if a starter misses the cut, so put your best backup at S1.
         </Rule>
         <Rule label="Roster lock">
@@ -103,10 +103,13 @@ export default function RulesPage() {
 
       {/* Scoring */}
       <Section icon={BarChart3} title="Scoring">
-        <Rule label="Best 4 of 5">
-          Each round, only your <span className="text-masters-cream font-medium">4 best-scoring starters</span> count
-          toward your team total. Your worst starter is dropped automatically, so one bad round from
-          one player won't sink your team.
+        <Rule label="Rounds 1 & 2 — Best 4 of 5">
+          In the first two rounds, only your <span className="text-masters-cream font-medium">4 best-scoring starters</span> count.
+          Your worst starter is dropped automatically, so one bad round from one player won't sink your team early.
+        </Rule>
+        <Rule label="Rounds 3 & 4 — All 5 count">
+          From Round 3 onwards, <span className="text-masters-cream font-medium">all 5 starters count</span> toward
+          your score — no player is dropped. This increases volatility and gives every starter a bigger impact on the weekend.
         </Rule>
         <Rule label="vs Par">
           Scores are measured relative to par (e.g. −3, E, +2). Lower is better. A player who
@@ -117,8 +120,7 @@ export default function RulesPage() {
           on the bench. They appear on the leaderboard card greyed out.
         </Rule>
         <Rule label="Total">
-          Your overall tournament score is the sum of your best-4-of-5 scores across all completed
-          rounds. Lowest total wins.
+          Your overall tournament score is the sum of your round scores across all completed rounds. Lowest total wins.
         </Rule>
       </Section>
 
@@ -160,7 +162,7 @@ export default function RulesPage() {
         </Rule>
         <Rule label="Auto-sub">
           If you haven't manually resolved a cut starter by the time Round 3 scores first appear,
-          the system auto-promotes your highest-priority surviving sub (S1 first, then S2, then S3)
+          the system auto-promotes your highest-priority surviving sub (S1 first, then S2, S3, S4)
           into that starter's slot. The sub order you set during the draft determines the priority.
         </Rule>
       </Section>
@@ -171,12 +173,13 @@ export default function RulesPage() {
           In rare cases a team may not be able to field a competitive lineup after the cut.
         </p>
         <Rule label="Trigger">
-          If your team cannot field at least <span className="text-masters-cream font-medium">4 valid starters</span>{' '}
-          for Round 3 after all auto-subs have been applied, your team is marked{' '}
+          Because all 5 starters count from Round 3 onwards, your team must field a full{' '}
+          <span className="text-masters-cream font-medium">5 valid starters</span> for Round 3.
+          If it cannot after all auto-subs have been applied, your team is marked{' '}
           <Pill color="red">DQ</Pill> and receives no score for Rounds 3 and 4.
         </Rule>
         <Rule label="How to avoid it">
-          Draft at least 3 subs who are likely to make the cut, and set your sub order so the
+          Draft at least 4 subs who are likely to make the cut, and set your sub order so the
           most reliable players are S1 and S2. If multiple starters are at risk, manually sub
           before Round 3 starts.
         </Rule>

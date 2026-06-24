@@ -101,10 +101,10 @@ async function createPlayer(name) {
 
 // ─── Auto-sub & DQ (runs before R2+ snapshots) ────────────────────────────────
 // Replaces invalid starters (missed cut OR withdrawn) with available subs.
-// If a team can't field 4 valid starters after auto-subbing, marks them DQ.
+// DQ threshold: R2 requires 4 valid starters; R3/R4 requires 5 (all starters count).
 // WD is checked always; cut is only applied once cut_checked = true.
 
-async function autoSubCutPlayers(pgaTournamentId) {
+async function autoSubCutPlayers(pgaTournamentId, round) {
   const { data: pgaT } = await supabase
     .from('pga_tournaments')
     .select('cut_checked')
@@ -166,14 +166,15 @@ async function autoSubCutPlayers(pgaTournamentId) {
         console.log(`  Auto-sub [${reason}]: ${out.players?.name} ← ${inSub.players?.name} (slot ${out.slot_number})`);
       }
 
-      // DQ check: valid starters = original valid starters + newly swapped-in subs
+      // DQ check: R3/R4 requires 5 starters (all count); R2 requires 4
+      const threshold = round >= 3 ? 5 : 4;
       const validStarters = starters.filter(r => !isInvalid(r)).length + swapCount;
-      if (validStarters < 4) {
+      if (validStarters < threshold) {
         await supabase.from('tournament_memberships')
           .update({ is_dq: true })
           .eq('tournament_id', ft.id)
           .eq('user_id', userId);
-        console.log(`  DQ: user ${userId} — only ${validStarters} valid starters after auto-sub`);
+        console.log(`  DQ: user ${userId} — only ${validStarters} valid starters (need ${threshold} for R${round})`);
       }
     }
   }
@@ -205,7 +206,7 @@ async function snapshotRostersIfNewRound(pgaTournamentId) {
       if (snapped.has(round)) continue;
       // Before snapshotting R2+, auto-sub any invalid starters (WD or missed cut)
       // that the user hasn't manually resolved. Idempotent — no-op if already clean.
-      if (round >= 2) await autoSubCutPlayers(pgaTournamentId);
+      if (round >= 2) await autoSubCutPlayers(pgaTournamentId, round);
 
       const { data: rosters } = await supabase
         .from('rosters')

@@ -174,7 +174,7 @@ create table public.tournament_players (
 -- ============================================================
 -- ROSTERS (active draft picks per user per fantasy tournament)
 -- slot_type: 'starter' (counts for scoring) or 'sub' (bench)
--- slot_number: 1–5 starters, 1–3 subs
+-- slot_number: 1–5 starters, 1–4 subs
 -- is_active: false = removed from roster
 -- ============================================================
 create table public.rosters (

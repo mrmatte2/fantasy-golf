@@ -253,8 +253,8 @@ export default function MyTeamPage() {
   const cTierSubs = subsRoster.filter(r => getTier(r.players?.world_ranking) === 'C');
   const cTierWarning = needsCTier && cTierStarters.length === 0 && starters.length > 0;
 
-  // Compute best-4-of-5 for any set of player IDs in a given round
-  function computeRoundBest4(playerIds, round) {
+  // R1/R2: best 4 of 5 (drop worst). R3/R4: all starters count.
+  function computeRoundScore(playerIds, round) {
     const totals = playerIds
       .map(pid => {
         const roundScores = (scores[pid] || []).filter(s => s.round === round);
@@ -262,9 +262,10 @@ export default function MyTeamPage() {
         return roundScores.reduce((sum, s) => sum + (s.vs_par || 0), 0);
       })
       .filter(t => t !== null)
-      .sort((a, b) => a - b)
-      .slice(0, 4);
-    return totals.length > 0 ? totals.reduce((sum, t) => sum + t, 0) : null;
+      .sort((a, b) => a - b);
+    const toDrop = round <= 2 ? Math.max(0, totals.length - 4) : 0;
+    const counted = toDrop > 0 ? totals.slice(0, totals.length - toDrop) : totals;
+    return counted.length > 0 ? counted.reduce((sum, t) => sum + t, 0) : null;
   }
 
   const currentStarterIds = starters.map(r => r.player_id);
@@ -281,13 +282,13 @@ export default function MyTeamPage() {
       const snapStarterIds = snapshots
         .filter(s => s.user_id === user.id && s.round === round && s.slot_type === 'starter')
         .map(s => s.player_id);
-      const lockedScore = computeRoundBest4(snapStarterIds, round);
-      const currentScore = computeRoundBest4(currentStarterIds, round);
+      const lockedScore = computeRoundScore(snapStarterIds, round);
+      const currentScore = computeRoundScore(currentStarterIds, round);
       const unchanged = snapStarterIds.length === currentStarterIds.length &&
         snapStarterIds.every(id => currentStarterIds.includes(id));
       return { round, isLocked: true, lockedScore, currentScore, unchanged };
     }
-    return { round, isLocked: false, liveScore: computeRoundBest4(currentStarterIds, round) };
+    return { round, isLocked: false, liveScore: computeRoundScore(currentStarterIds, round) };
   });
 
   const teamTotal = roundBreakdown
@@ -389,7 +390,7 @@ export default function MyTeamPage() {
           <div>
             <div className="font-semibold">Team DQ</div>
             <div className="text-red-300/60 text-xs mt-0.5">
-              Your team couldn't field 4 valid starters after the cut — no score for R3 or R4.
+              Your team couldn't field 5 valid starters for Round 3 — no score is counted from Round 3 onwards.
             </div>
           </div>
         </div>

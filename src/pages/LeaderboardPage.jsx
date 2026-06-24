@@ -128,7 +128,8 @@ export default function LeaderboardPage() {
 
         const scored = starterScores.filter(s => s.holesPlayed > 0).sort((a, b) => a.roundTotal - b.roundTotal);
         const totalStarters = effectiveStarters.length;
-        const dropsNeeded = Math.max(0, totalStarters - 4);
+        // R1/R2: drop the worst starter. R3/R4: all starters count.
+        const dropsNeeded = round <= 2 ? Math.max(0, totalStarters - 4) : 0;
         const unscoredCount = totalStarters - scored.length;
         const dropsFromScored = Math.max(0, dropsNeeded - unscoredCount);
         const best4 = scored.slice(0, scored.length - dropsFromScored);

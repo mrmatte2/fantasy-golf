@@ -11,7 +11,7 @@ import { getTier, TIER_LIMITS, TIER_META } from '../lib/tiers';
 import { Search, Lock, Info, LogIn, KeyRound } from 'lucide-react';
 
 const MAX_STARTERS = 5;
-const MAX_SUBS = 3;
+const MAX_SUBS = 4;
 const TIER_ORDER = ['S', 'A', 'B', 'C'];
 
 function TierBadge({ worldRanking }) {
