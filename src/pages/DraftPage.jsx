@@ -139,7 +139,7 @@ export default function DraftPage() {
 
   async function handleAdd(player, slotType) {
     if (slotType === 'starter' && starters.length >= MAX_STARTERS) {
-      if (subs.length >= MAX_SUBS) { alert('Roster is full (5 starters + 3 subs)'); return; }
+      if (subs.length >= MAX_SUBS) { alert('Roster is full (5 starters + 4 subs)'); return; }
       setSlotModal(player); return;
     }
     const slotNumber = slotType === 'starter' ? starters.length + 1 : subs.length + 1;
@@ -232,7 +232,7 @@ export default function DraftPage() {
       <div className="py-6 shrink-0 animate-fade-up">
         <h1 className="font-display text-3xl font-bold text-masters-cream">Draft Your Team</h1>
         <p className="text-white/40 text-sm mt-1">
-          {membership.team_name} · 5 starters + 3 substitutes · Best 4 of 5 count each round
+          {membership.team_name} · 5 starters + 4 substitutes · Best 4 of 5 count in R1 & R2, all 5 count in R3 & R4
         </p>
       </div>
 
@@ -251,7 +251,7 @@ export default function DraftPage() {
           <div className="card-dark">
             <div className="flex justify-between items-baseline mb-3">
               <span className="text-xs uppercase tracking-wider text-white/40">Tier Usage</span>
-              <span className="text-xs text-white/30">{roster.length}/8 picks</span>
+              <span className="text-xs text-white/30">{roster.length}/{MAX_STARTERS + MAX_SUBS} picks</span>
             </div>
             <div className="space-y-2">
               {TIER_ORDER.map(tier => {
@@ -363,7 +363,7 @@ export default function DraftPage() {
 
           <div className="text-xs text-white/30 flex items-start gap-1.5 px-1">
             <Info size={12} className="shrink-0 mt-0.5" />
-            Best 4 of your 5 starters count per round. At least 1 C-tier starter required for R1 &amp; R2.
+            Best 4 of 5 count in R1 & R2 — all 5 count in R3 & R4. At least 1 C-tier starter required for R1 & R2.
           </div>
         </div>
 
