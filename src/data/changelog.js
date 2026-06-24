@@ -49,7 +49,7 @@ export const CHANGELOG = [
       {
         public: true,
         label: 'Cleaner status labels',
-        text: "Teams that can't field 4 starters after the cut are now marked DQ instead of DNF.",
+        text: "Teams that can't field 5 starters after the cut are now marked DQ instead of DNF.",
       },
       {
         public: false,
