@@ -26,13 +26,13 @@ export default function WhatsNewModal() {
     .slice(0, RECENT_DATES);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={dismiss}>
-      <div className="relative w-full max-w-md bg-masters-dark border border-white/10 rounded-2xl shadow-2xl flex flex-col max-h-[85vh]"
+      <div className="relative w-full max-w-md bg-masters-dark border border-white/10 rounded-2xl shadow-2xl"
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-white/10 shrink-0">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-white/10">
           <div className="flex items-center gap-2.5">
             <Sparkles size={18} className="text-masters-gold" />
             <span className="font-display font-bold text-masters-cream text-lg">What's New</span>
@@ -44,8 +44,8 @@ export default function WhatsNewModal() {
         </div>
 
         {/* Entries — scrollable with fade hint */}
-        <div className="relative min-h-0 flex-1">
-          <div className="px-6 py-5 space-y-6 overflow-y-auto h-full">
+        <div className="relative">
+          <div className="px-6 py-5 space-y-6 overflow-y-auto max-h-[55vh]">
             {recentReleases.map(release => (
               <div key={release.date}>
                 <div className="text-xs font-medium text-masters-gold/60 uppercase tracking-widest mb-3">
@@ -71,7 +71,7 @@ export default function WhatsNewModal() {
         </div>
 
         {/* Footer — always visible */}
-        <div className="px-6 pb-6 pt-2 shrink-0 space-y-2">
+        <div className="px-6 pb-6 pt-2 space-y-2">
           <button onClick={dismiss} className="w-full btn-primary py-2.5 text-sm">
             Got it
           </button>
