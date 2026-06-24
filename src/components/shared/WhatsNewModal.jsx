@@ -31,17 +31,20 @@ export default function WhatsNewModal() {
           </button>
         </div>
 
-        {/* Entries — scrollable */}
-        <div className="px-6 py-5 space-y-4 overflow-y-auto">
-          {publicEntries.map((entry, i) => (
-            <div key={i} className="flex gap-3">
-              <div className="mt-1 w-1.5 h-1.5 rounded-full bg-masters-gold shrink-0" />
-              <div>
-                <div className="text-masters-cream text-sm font-medium">{entry.label}</div>
-                <div className="text-white/50 text-xs mt-0.5 leading-relaxed">{entry.text}</div>
+        {/* Entries — scrollable with fade hint */}
+        <div className="relative min-h-0 flex-1">
+          <div className="px-6 py-5 space-y-4 overflow-y-auto h-full">
+            {publicEntries.map((entry, i) => (
+              <div key={i} className="flex gap-3">
+                <div className="mt-1 w-1.5 h-1.5 rounded-full bg-masters-gold shrink-0" />
+                <div>
+                  <div className="text-masters-cream text-sm font-medium">{entry.label}</div>
+                  <div className="text-white/50 text-xs mt-0.5 leading-relaxed">{entry.text}</div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-masters-dark to-transparent" />
         </div>
 
         {/* Footer — always visible */}
