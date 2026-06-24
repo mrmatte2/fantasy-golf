@@ -1,17 +1,29 @@
 import React from 'react';
 import { X, Sparkles } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useWhatsNew } from '../../hooks/useWhatsNew';
 import { CHANGELOG } from '../../data/changelog';
+
+function formatDate(dateStr) {
+  const [year, month, day] = dateStr.split('-');
+  return new Date(year, month - 1, day).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
+}
+
+const RECENT_DATES = 2;
 
 export default function WhatsNewModal() {
   const { open, dismiss } = useWhatsNew();
   if (!open) return null;
 
-  const publicEntries = CHANGELOG.flatMap(release =>
-    release.entries
-      .filter(e => e.public)
-      .map(e => ({ ...e, date: release.date }))
-  );
+  const recentReleases = CHANGELOG
+    .map(release => ({
+      ...release,
+      entries: release.entries.filter(e => e.public),
+    }))
+    .filter(r => r.entries.length > 0)
+    .slice(0, RECENT_DATES);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -33,13 +45,24 @@ export default function WhatsNewModal() {
 
         {/* Entries — scrollable with fade hint */}
         <div className="relative min-h-0 flex-1">
-          <div className="px-6 py-5 space-y-4 overflow-y-auto h-full">
-            {publicEntries.map((entry, i) => (
-              <div key={i} className="flex gap-3">
-                <div className="mt-1 w-1.5 h-1.5 rounded-full bg-masters-gold shrink-0" />
-                <div>
-                  <div className="text-masters-cream text-sm font-medium">{entry.label}</div>
-                  <div className="text-white/50 text-xs mt-0.5 leading-relaxed">{entry.text}</div>
+          <div className="px-6 py-5 space-y-6 overflow-y-auto h-full">
+            {recentReleases.map(release => (
+              <div key={release.date}>
+                <div className="text-xs font-medium text-masters-gold/60 uppercase tracking-widest mb-3">
+                  {formatDate(release.date)}
+                </div>
+                <div className="space-y-4">
+                  {release.entries.map((entry, i) => (
+                    <div key={i} className="flex gap-3">
+                      <div className="mt-1 w-1.5 h-1.5 rounded-full bg-masters-gold shrink-0" />
+                      <div>
+                        <div className="text-masters-cream text-sm font-medium">{entry.label}</div>
+                        {entry.text.split('\n\n').map((para, j) => (
+                          <p key={j} className="text-white/50 text-xs mt-0.5 leading-relaxed">{para}</p>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
@@ -48,11 +71,14 @@ export default function WhatsNewModal() {
         </div>
 
         {/* Footer — always visible */}
-        <div className="px-6 pb-6 pt-2 shrink-0">
-          <button onClick={dismiss}
-            className="w-full btn-primary py-2.5 text-sm">
+        <div className="px-6 pb-6 pt-2 shrink-0 space-y-2">
+          <button onClick={dismiss} className="w-full btn-primary py-2.5 text-sm">
             Got it
           </button>
+          <Link to="/changelog" onClick={dismiss}
+            className="block text-center text-xs text-white/30 hover:text-white/60 transition-colors py-1">
+            See full history →
+          </Link>
         </div>
       </div>
     </div>

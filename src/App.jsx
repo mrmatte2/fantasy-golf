@@ -12,6 +12,7 @@ import MyTeamPage from './pages/MyTeamPage';
 import AdminPage from './pages/AdminPage';
 import RulesPage from './pages/RulesPage';
 import ProfilePage from './pages/ProfilePage';
+import ChangelogPage from './pages/ChangelogPage';
 import TeamNamePrompt from './components/shared/TeamNamePrompt';
 import WhatsNewModal from './components/shared/WhatsNewModal';
 import { WhatsNewProvider } from './hooks/useWhatsNew';
@@ -101,6 +102,13 @@ export default function App() {
           <Route path="/rules" element={
             <ProtectedRoute>
               <AppLayout><RulesPage /></AppLayout>
+            </ProtectedRoute>
+          } />
+
+          {/* Changelog */}
+          <Route path="/changelog" element={
+            <ProtectedRoute>
+              <AppLayout><ChangelogPage /></AppLayout>
             </ProtectedRoute>
           } />
 
