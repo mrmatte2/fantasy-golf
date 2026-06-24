@@ -96,11 +96,11 @@ export default function DraftPage() {
   }
 
   // Carry-over: unused picks from higher tiers cascade down
-  const sUnused = Math.max(0, 1 - tierCounts.S);
-  const aLimit  = 2 + sUnused;
+  const sUnused = Math.max(0, TIER_LIMITS.S - tierCounts.S);
+  const aLimit  = TIER_LIMITS.A + sUnused;
   const aUnused = Math.max(0, aLimit - tierCounts.A);
-  const bLimit  = 2 + aUnused;
-  const effectiveLimits = { S: 1, A: aLimit, B: bLimit, C: Infinity };
+  const bLimit  = TIER_LIMITS.B + aUnused;
+  const effectiveLimits = { S: TIER_LIMITS.S, A: aLimit, B: bLimit, C: Infinity };
   const carryOver = { S: 0, A: sUnused, B: aUnused, C: 0 };
 
   // C-tier starter warning
