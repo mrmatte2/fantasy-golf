@@ -60,7 +60,8 @@ export default function RulesPage() {
       <Section icon={Trophy} title="Overview">
         <p>
           Fantasy Golf is a pick-and-score game tied to real PGA Tour events. Before the tournament
-          starts you draft a team of 9 players within a fixed budget. Over the four rounds of the
+          starts you draft a team of 9 players — your picks are shaped by a tier system based on world
+          rankings, so you can't just stack the best players in the world. Over the four rounds of the
           tournament your team accumulates a score based on how your players perform on the course —
           the team with the lowest (best) total score at the end wins.
         </p>
@@ -189,7 +190,7 @@ export default function RulesPage() {
       <div className="card-dark border-masters-gold/20 bg-masters-gold/5">
         <h2 className="font-display font-bold text-masters-gold mb-3">Strategy Tips</h2>
         <div className="space-y-2 text-sm text-white/70">
-          <Rule>Spending your entire budget on elite players leaves nothing for depth. Consider one or two value picks who could outperform their price.</Rule>
+          <Rule>Don't overlook your C-tier picks — a well-chosen C-tier sub can outperform an A-tier starter on any given day, and they're often the ones who surprise you the most.</Rule>
           <Rule>Set your sub order carefully — S1 should be the sub you most want playing if a starter goes down.</Rule>
           <Rule>Watch the cut line during Round 2. If a starter is on the bubble, be ready to act before Round 3 begins.</Rule>
           <Rule>Subs still score every round even while on the bench. If a sub is outscoring your starters, promote them.</Rule>
